@@ -1,5 +1,7 @@
-#cy { width: 100%; height: 60vh; border: 1px solid #ccc; }
-.left-pane { padding-right: 8px; }
+.left-pane { padding-right: 8px; display:flex; flex-direction:column; flex:1 1 auto; height:100%; box-sizing:border-box; }
+#controls { }
+.controls { display:flex; flex-direction:column; flex:1 1 auto; position:relative; min-height: 0; }
+#cy { width: 100%; border: 1px solid #ccc; display:block; flex:1 1 auto; min-height:0; height:auto; position:relative; z-index:10 }
 .right-pane { padding-left: 8px; }
 
 button { margin-right: 6px; }
@@ -8,7 +10,10 @@ button { margin-right: 6px; }
 .var { padding:6px 8px; border:1px solid #ccc; background:#f7f7f7; border-radius:4px; cursor:grab }
 .var:active { cursor:grabbing }
 
-.controls { position: relative; }
+.controls { /* defined above */ }
+
+.meta-resizer { height: 8px; cursor: row-resize; background: transparent; transition: background .12s ease; }
+.meta-resizer:hover { background: rgba(0,0,0,0.04); }
 
 .edge-overlay {
 	position: absolute;
@@ -17,6 +22,7 @@ button { margin-right: 6px; }
 	width: 100%;
 	height: 100%;
 	pointer-events: none;
+	z-index: 99999;
 }
 
 /* resizer visual touches */
@@ -31,5 +37,5 @@ button { margin-right: 6px; }
 /* metadata title consistent spacing */
 .meta-title { font-size:15px; font-weight:600; padding-bottom:6px; margin:0; line-height:1.2 }
 .meta-title.last-selected { font-weight:700 }
-/* ensure right pane covers the full viewport height */
-.right-pane { height: 100vh }
+/* right pane should fill container height (container controls viewport sizing) */
+.right-pane { height: 100%; box-sizing: border-box }

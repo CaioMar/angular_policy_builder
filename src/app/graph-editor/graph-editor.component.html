@@ -1,15 +1,15 @@
-<div class="container" style="display:flex;align-items:flex-start;height:100%;min-height:400px;gap:0">
+<div #rootContainer class="container" style="display:flex;align-items:stretch;height:auto;gap:0;box-sizing:border-box;">
   <div class="left-pane" style="flex:1;min-width:0;padding-right:12px">
     <div class="controls">
       <div id="cy" #cyContainer (drop)="onDrop($event)" (dragover)="onDragOver($event)"></div>
-      <!-- SVG overlay used to draw a live edge while dragging -->
+      <!-- SVG overlay: fallback visible line drawn on top during drag (pointer-events:none) -->
       <svg class="edge-overlay" [style.display]="isEdgeDragging ? 'block' : 'none'">
         <defs>
           <marker id="arrow" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="strokeWidth">
             <path d="M0,0 L10,5 L0,10 z" fill="#0073bb" />
           </marker>
         </defs>
-        <line [attr.x1]="getDragLineStart().x" [attr.y1]="getDragLineStart().y" [attr.x2]="dragCurrent.x" [attr.y2]="dragCurrent.y" stroke="#0073bb" stroke-width="2" marker-end="url(#arrow)" />
+        <line [attr.x1]="getDragLineStart().x" [attr.y1]="getDragLineStart().y" [attr.x2]="dragCurrent.x" [attr.y2]="dragCurrent.y" stroke="#0073bb" stroke-width="3" stroke-opacity="0.95" stroke-dasharray="6,4" marker-end="url(#arrow)" />
       </svg>
       <!-- small settings gear in the canvas (discrete) -->
       <div class="cy-settings" style="position:absolute;right:18px;top:14px;z-index:190;">
@@ -39,8 +39,10 @@
       </div>
     </div>
 
+    <div class="meta-resizer" (mousedown)="startMetaResizerDrag($event)" title="Drag to resize metadata"></div>
+
     <!-- Metadata / details below the canvas -->
-    <div class="metadata" style="margin-top:12px;border-top:1px solid #eee;padding-top:8px">
+    <div class="metadata" [style.height.px]="metadataHeight" style="margin-top:12px;border-top:1px solid #eee;padding-top:8px;overflow:auto;">
       <div *ngIf="selectedNode">
         <div class="meta-title" style="font-size:15px;font-weight:600;padding-bottom:6px">Node</div>
         <div style="font-size:13px;color:#333;margin-top:6px">Id: {{selectedNode.id}}</div>

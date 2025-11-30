@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, NgZone } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, NgZone, AfterViewInit } from '@angular/core';
 import * as cytoscape from 'cytoscape';
 
 interface NodeModel {
@@ -24,6 +24,7 @@ interface EdgeModel {
 })
 export class GraphEditorComponent implements OnInit, OnDestroy {
   @ViewChild('cyContainer', { static: true }) cyContainer!: ElementRef<HTMLDivElement>;
+  @ViewChild('rootContainer', { static: true }) rootContainer!: ElementRef<HTMLDivElement>;
 
   cy: any;
   nodes: NodeModel[] = [];
@@ -101,6 +102,13 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _isResizerDragging = false;
   private _resizerMoveHandler: any = null;
   private _resizerUpHandler: any = null;
+  // metadata resizer state (vertical)
+  metadataHeight = 160;
+  private _isMetaResizerDragging = false;
+  private _metaResizerMoveHandler: any = null;
+  private _metaResizerUpHandler: any = null;
+  private _metaStartY: number | null = null;
+  private _metaStartHeight: number = 160;
   // canvas settings
   canvasSettingsVisible = false;
   bgPattern: 'plain' | 'dots' | 'grid' = 'dots';
@@ -116,9 +124,9 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _panMoveHandler: any = null;
   private _panUpHandler: any = null;
   private _rightDownHandler: any = null;
+  private _resizeWindowHandler: any = null;
 
   constructor(private zone: NgZone) { }
-
   ngOnInit(): void {
     const cyFactory = (cytoscape as any) && ((cytoscape as any).default || (cytoscape as any));
     this.cy = (cyFactory as any)({
@@ -437,6 +445,17 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
             console.log('[GraphEditor] drag preview update tmpEdgeExists=', !!te, 'line-color=', teStyle, 'tmpNodeRenderedPos=', tnRp);
           }
         } catch (e) { /* ignore */ }
+
+        // Force temp-edge to stay visible: reapply inline styles and bring to front
+        try {
+          if (this.currentTempEdgeId) {
+            const te = this.cy.getElementById(this.currentTempEdgeId);
+            if (te) {
+              try { te.style && te.style({ 'line-color': '#0073bb', 'target-arrow-color': '#0073bb', 'line-style': 'dashed', 'opacity': 0.95, 'width': 3, 'z-index': 9999 }); } catch (e) { /* ignore */ }
+              try { if (typeof te.toFront === 'function') te.toFront(); } catch (e) { /* ignore */ }
+            }
+          }
+        } catch (e) { /* ignore */ }
       } catch (e) { /* ignore */ }
       // provide cursor feedback when hovering over nodes while dragging
       try {
@@ -616,6 +635,36 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       } catch (e) { /* ignore */ }
     };
     try { window.addEventListener('click', this._boundOutsideClickHandler); } catch (e) { /* ignore */ }
+    // make sure container fits the available viewport space (avoid page scrollbar)
+    try {
+      this._resizeWindowHandler = () => this._adjustRootContainerHeight();
+      window.addEventListener('resize', this._resizeWindowHandler);
+      // initial adjust after a short delay so layout settled
+      setTimeout(() => this._adjustRootContainerHeight(), 0);
+    } catch (e) { /* ignore */ }
+  }
+
+  // adjust the root container height so the editor fits remaining viewport space
+  private _adjustRootContainerHeight(): void {
+    try {
+      if (!this.rootContainer || !this.rootContainer.nativeElement) return;
+      const el = this.rootContainer.nativeElement as HTMLElement;
+      const rect = el.getBoundingClientRect();
+      // clamp top to >= 0 so page scroll (negative top) doesn't inflate available height
+      const top = Math.max(0, rect.top);
+      const avail = Math.max(200, window.innerHeight - top);
+      // set explicit height to available space so internal flex children can use 100%
+      el.style.height = avail + 'px';
+      el.style.maxHeight = avail + 'px';
+      el.style.overflow = 'hidden';
+      // ensure right pane uses full container height
+      try {
+        const rp = document.querySelector('.right-pane') as HTMLElement | null;
+        if (rp) rp.style.height = '100%';
+      } catch (e) { /* ignore */ }
+      // trigger cy resize in case sizes changed
+      try { if (this.cy && typeof this.cy.resize === 'function') this.cy.resize(); } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
   }
 
   ngOnDestroy(): void {
@@ -632,11 +681,15 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     // remove resizer handlers
     try { if (this._resizerMoveHandler) window.removeEventListener('mousemove', this._resizerMoveHandler); } catch (e) { /* ignore */ }
     try { if (this._resizerUpHandler) window.removeEventListener('mouseup', this._resizerUpHandler); } catch (e) { /* ignore */ }
+    // remove metadata resizer handlers
+    try { if (this._metaResizerMoveHandler) window.removeEventListener('mousemove', this._metaResizerMoveHandler); } catch (e) { /* ignore */ }
+    try { if (this._metaResizerUpHandler) window.removeEventListener('mouseup', this._metaResizerUpHandler); } catch (e) { /* ignore */ }
     // remove any modal handlers
     try { if (this._modalMoveHandler) window.removeEventListener('mousemove', this._modalMoveHandler); } catch (e) { /* ignore */ }
     try { if (this._modalUpHandler) window.removeEventListener('mouseup', this._modalUpHandler); } catch (e) { /* ignore */ }
     try { if (this._wheelHandler) this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.removeEventListener('wheel', this._wheelHandler); } catch (e) { /* ignore */ }
     try { if (this._rightDownHandler) this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.removeEventListener('mousedown', this._rightDownHandler); } catch (e) { /* ignore */ }
+    try { if (this._resizeWindowHandler) window.removeEventListener('resize', this._resizeWindowHandler); } catch (e) { /* ignore */ }
   }
 
   
@@ -785,7 +838,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       // ensure the edge is visible by applying an inline style as a fallback
       try {
         if (added) {
-          try { added.style && added.style({ 'line-color': '#0073bb', 'target-arrow-color': '#0073bb', 'line-style': 'dashed', 'opacity': 0.85, 'width': 2 }); } catch (e) { /* ignore */ }
+          try { added.style && added.style({ 'line-color': '#0073bb', 'target-arrow-color': '#0073bb', 'line-style': 'dashed', 'opacity': 0.85, 'width': 2, 'z-index': 9999 }); } catch (e) { /* ignore */ }
         }
       } catch (e) { /* ignore */ }
     } catch (e) { /* ignore */ }
@@ -1481,6 +1534,53 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     } catch (e) { /* ignore */ }
   }
 
+  // Metadata resizer: start drag to adjust metadata panel height
+  startMetaResizerDrag(ev: MouseEvent): void {
+    try {
+      ev.preventDefault(); ev.stopPropagation();
+      this._isMetaResizerDragging = true;
+      // record starting mouse Y and starting metadata height for delta-based resizing
+      this._metaStartY = ev.clientY;
+      this._metaStartHeight = this.metadataHeight || 0;
+      this._metaResizerMoveHandler = (m: MouseEvent) => this._onMetaResizerMove(m);
+      this._metaResizerUpHandler = (u: MouseEvent) => this._onMetaResizerUp(u);
+      window.addEventListener('mousemove', this._metaResizerMoveHandler);
+      window.addEventListener('mouseup', this._metaResizerUpHandler);
+    } catch (e) { /* ignore */ }
+  }
+
+  private _onMetaResizerMove(ev: MouseEvent): void {
+    if (!this._isMetaResizerDragging) return;
+    try {
+      if (this._metaStartY == null) return;
+      // delta: positive when moving pointer down; we want metadataHeight to decrease when moving down
+      const delta = this._metaStartY - ev.clientY;
+      let newH = Math.round(this._metaStartHeight + delta);
+      // compute bounds using left-pane height
+      const leftPane = this.cyContainer && this.cyContainer.nativeElement ? (this.cyContainer.nativeElement.closest('.left-pane') as HTMLElement) : null;
+      const paneHeight = leftPane ? leftPane.getBoundingClientRect().height : window.innerHeight;
+      const minH = 60;
+      const maxH = Math.max(120, paneHeight - 80);
+      newH = Math.max(minH, Math.min(newH, maxH));
+      this.zone.run(() => { this.metadataHeight = newH; });
+      // ensure Cytoscape updates its internal canvases to match the resized container
+      try {
+        if (this.cy && typeof this.cy.resize === 'function') {
+          // schedule on next frame for smoother updates
+          requestAnimationFrame(() => { try { this.cy.resize(); } catch (e) { /* ignore */ } });
+        }
+      } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+  }
+
+  private _onMetaResizerUp(ev: MouseEvent): void {
+    try {
+      this._isMetaResizerDragging = false;
+      if (this._metaResizerMoveHandler) { window.removeEventListener('mousemove', this._metaResizerMoveHandler); this._metaResizerMoveHandler = null; }
+      if (this._metaResizerUpHandler) { window.removeEventListener('mouseup', this._metaResizerUpHandler); this._metaResizerUpHandler = null; }
+    } catch (e) { /* ignore */ }
+  }
+
   updateSelectedNode(): void {
     if (!this.selectedNode) return;
     const el = this.cy.getElementById(this.selectedNode.id);
@@ -1841,9 +1941,9 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       if (this.bgPattern === 'plain') {
         el.style.backgroundImage = 'none';
       } else if (this.bgPattern === 'dots') {
-        // dotted pattern
-        el.style.backgroundImage = 'radial-gradient(' + (this._mixColor('#e6e6e6', this.bgColor) || '#e6e6e6') + ' 1px, transparent 1px)';
-        el.style.backgroundSize = '12px 12px';
+        // dotted pattern — slightly larger and closer dots with a bit darker tone
+        el.style.backgroundImage = 'radial-gradient(' + (this._mixColor('#cfcfcf', this.bgColor) || '#cfcfcf') + ' 1px, transparent 1px)';
+        el.style.backgroundSize = '10px 10px';
         el.style.backgroundRepeat = 'repeat';
       } else if (this.bgPattern === 'grid') {
         // subtle grid
@@ -2057,3 +2157,5 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     } catch (e) { return null; }
   }
 }
+
+// Additional methods added after class to keep patch small (none)
