@@ -177,6 +177,15 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
           }
         },
         {
+          selector: 'node.temp-drag-node',
+          style: {
+            'opacity': 0,
+            'width': 1,
+            'height': 1,
+            'label': ''
+          }
+        },
+        {
           selector: 'node:selected',
           style: {
             // selected node: AWS-like highlighted look
@@ -385,6 +394,21 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
         this.dragCurrent = { x: p.x, y: p.y };
         try { this.cy.getElementById(this.dragSourceId).lock(); } catch (e) { /* ignore */ }
       });
+      // create temporary cy node+edge visuals so the preview looks like a normal blue edge
+        try {
+          const tmpId = 'tmpdrag' + Date.now();
+          this.currentTempNodeId = tmpId;
+          try {
+            const modelPos = this.renderedToModel(this.dragCurrent);
+            // create an invisible temp node used only for edge preview
+            // make it non-selectable/grabbable and locked so it does not intercept mouse events
+            this.cy.add({ group: 'nodes', data: { id: tmpId, label: '' }, position: { x: modelPos.x, y: modelPos.y }, selectable: false, grabbable: false, locked: true });
+            try { const tmpEl = this.cy.getElementById(tmpId); if (tmpEl) { try { tmpEl.addClass('temp-drag-node'); } catch (e) { /* ignore */ } } } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
+          const tempEdgeId = this.createTempEdge(nodeId, tmpId);
+          if (tempEdgeId) this.currentTempEdgeId = tempEdgeId;
+          console.log('[GraphEditor] created drag preview tmpNode=', this.currentTempNodeId, 'tmpEdge=', this.currentTempEdgeId, 'modelPos=', this.dragCurrent);
+        } catch (e) { console.log('[GraphEditor] error creating drag preview', e); }
       // prevent cytoscape from starting a node-move
       try { (evt.originalEvent as any).preventDefault?.(); } catch (e) { /* ignore */ }
     });
@@ -395,6 +419,25 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       const rp = evt.renderedPosition || evt.position;
       if (!rp) return;
       this.zone.run(() => { this.dragCurrent = { x: rp.x, y: rp.y }; });
+      // if we created a temp node for the drag preview, update its position so the temp edge follows the pointer
+      try {
+        if (this.currentTempNodeId) {
+          const tmp = this.cy.getElementById(this.currentTempNodeId);
+          if (tmp && typeof tmp.position === 'function') {
+            try { const modelPos = this.renderedToModel(rp); tmp.position({ x: modelPos.x, y: modelPos.y }); } catch (e) { /* ignore */ }
+          }
+        }
+        // diagnostic: log preview element states occasionally
+        try {
+          if (this.currentTempEdgeId) {
+            const te = this.cy.getElementById(this.currentTempEdgeId);
+            const tn = this.currentTempNodeId ? this.cy.getElementById(this.currentTempNodeId) : null;
+            const teStyle = te && te.style ? te.style('line-color') : null;
+            const tnRp = tn && tn.renderedPosition ? tn.renderedPosition() : null;
+            console.log('[GraphEditor] drag preview update tmpEdgeExists=', !!te, 'line-color=', teStyle, 'tmpNodeRenderedPos=', tnRp);
+          }
+        } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
       // provide cursor feedback when hovering over nodes while dragging
       try {
         const target = evt.target;
@@ -453,12 +496,37 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
         const rp = evt.renderedPosition || evt.position || this.dragCurrent;
         const x = rp.x || this.dragCurrent.x;
         const y = rp.y || this.dragCurrent.y;
-        const tmpNodeId = 'tmpnode' + Date.now();
-        try {
-          // create temp node with type 'leaf' so leaf style appears immediately
-          const tmpEl = this.cy.add({ group: 'nodes', data: { id: tmpNodeId, label: '', type: 'leaf' }, position: { x, y } });
-          try { tmpEl.addClass('new-look-state-node'); tmpEl.addClass('temp-leaf'); } catch (e) { /* ignore */ }
-        } catch (e) { /* ignore */ }
+        // if we already created a drag-temp node, just reuse it and update position; otherwise create one
+        let tmpNodeId = this.currentTempNodeId;
+        if (tmpNodeId) {
+          try {
+            const tmpEl = this.cy.getElementById(tmpNodeId);
+            if (tmpEl && typeof tmpEl.position === 'function') {
+              const modelPos = this.renderedToModel({ x, y });
+              tmpEl.position({ x: modelPos.x, y: modelPos.y });
+              // if this node was an invisible drag preview, convert it into a visible temp leaf on drop
+              try {
+                if (tmpEl.hasClass && tmpEl.hasClass('temp-drag-node')) {
+                  try { tmpEl.removeClass('temp-drag-node'); } catch (e) { /* ignore */ }
+                  try { tmpEl.data && tmpEl.data('type', 'leaf'); } catch (e) { /* ignore */ }
+                  try { tmpEl.addClass && tmpEl.addClass('new-look-state-node'); } catch (e) { /* ignore */ }
+                  try { tmpEl.addClass && tmpEl.addClass('temp-leaf'); } catch (e) { /* ignore */ }
+                  try { if (tmpEl.unlock) tmpEl.unlock(); } catch (e) { /* ignore */ }
+                  try { if (tmpEl.grabify) tmpEl.grabify(); } catch (e) { /* ignore */ }
+                  try { if (tmpEl.selectify) tmpEl.selectify(); } catch (e) { /* ignore */ }
+                }
+              } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore */ }
+        } else {
+          tmpNodeId = 'tmpnode' + Date.now();
+          try {
+            const modelPos = this.renderedToModel({ x, y });
+            const tmpEl = this.cy.add({ group: 'nodes', data: { id: tmpNodeId, label: '', type: 'leaf' }, position: { x: modelPos.x, y: modelPos.y } });
+            try { tmpEl.addClass('new-look-state-node'); tmpEl.addClass('temp-leaf'); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
+          this.currentTempNodeId = tmpNodeId;
+        }
         // create temporary visual edge to the temp node (do this before storing currentTempNodeId so
         // createTempEdge doesn't remove the node we just added)
         const created = this.createTempEdge(this.dragSourceId, tmpNodeId);
@@ -691,8 +759,13 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   }
 
   createTempEdge(source: string, target: string): string {
-    // ensure only one temporary edge exists at a time
-    this.removeCurrentTempEdge();
+    // ensure only one temporary edge exists at a time (remove previous temp edge but keep any temp node)
+    try {
+      if (this.currentTempEdgeId) {
+        try { const prev = this.cy.getElementById(this.currentTempEdgeId); if (prev) this.cy.remove(prev); } catch (e) { /* ignore */ }
+        this.currentTempEdgeId = null;
+      }
+    } catch (e) { /* ignore */ }
     // prevent creating a temp edge if it would duplicate or introduce a cycle
     if (this.edgeExists(source, target) || this.wouldCreateCycle(source, target)) {
       // do not create a temp edge; caller should handle the falsy return
@@ -707,7 +780,15 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       }
     } catch (e) { /* ignore */ }
     const tempId = 'tmp' + Date.now();
-    try { this.cy.add({ group: 'edges', data: { id: tempId, source, target, label: '' }, classes: 'temp-edge' }); } catch (e) { /* ignore */ }
+    try {
+      const added = this.cy.add({ group: 'edges', data: { id: tempId, source, target, label: '' }, classes: 'temp-edge' });
+      // ensure the edge is visible by applying an inline style as a fallback
+      try {
+        if (added) {
+          try { added.style && added.style({ 'line-color': '#0073bb', 'target-arrow-color': '#0073bb', 'line-style': 'dashed', 'opacity': 0.85, 'width': 2 }); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
     this.currentTempEdgeId = tempId;
     return tempId;
   }
@@ -1787,6 +1868,19 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       const centerY = rect.height / 2;
       try { this.cy.zoom({ level: this.zoomLevel, position: { x: centerX, y: centerY } }); } catch (e) { try { this.cy.zoom(this.zoomLevel); } catch (ee) { /* ignore */ } }
     } catch (e) { /* ignore */ }
+  }
+
+  // Convert a rendered (pixel) position inside the cy container into model coordinates
+  private renderedToModel(pos: { x: number; y: number }): { x: number; y: number } {
+    try {
+      const pan = (this.cy && typeof this.cy.pan === 'function') ? this.cy.pan() : { x: 0, y: 0 };
+      const zoom = (this.cy && typeof this.cy.zoom === 'function') ? this.cy.zoom() : 1;
+      const mx = (pos.x - pan.x) / zoom;
+      const my = (pos.y - pan.y) / zoom;
+      return { x: mx, y: my };
+    } catch (e) {
+      return { x: pos.x, y: pos.y };
+    }
   }
 
   // custom right-button panning handlers
