@@ -1,0 +1,54 @@
+<div style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid rgba(0,0,0,0.06);">
+    <style>
+      .has-submenu:hover .submenu { display: block !important; }
+      /* File button and menu item styles */
+      .file-button { padding:6px 10px;border:1px solid #ddd;border-radius:4px;background:#fff;display:flex;align-items:center;gap:6px; }
+      .file-button .dots { font-size:22px; line-height:1; width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; color:#666; }
+      .menu-item { padding:6px 8px; cursor:pointer; border-radius:4px; display:block; }
+      .menu-item:hover, .menu-item.selected { background: #e8f4ff; color: #074fb0; font-weight:600; }
+      .submenu .menu-item { white-space:nowrap }
+    </style>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="position:relative">
+            <button class="file-button" (click)="fileMenuOpen = !fileMenuOpen" aria-label="File menu">
+              <span class="dots">⋮</span>
+            </button>
+          <div *ngIf="fileMenuOpen" style="position:absolute;left:0;top:36px;background:white;border:1px solid #ddd;box-shadow:0 6px 18px rgba(0,0,0,0.08);z-index:500;padding:6px;border-radius:4px;min-width:180px">
+              <div class="menu-item" (click)="newPolicy(); fileMenuOpen=false">New Policy</div>
+              <div class="menu-item" (click)="save(); fileMenuOpen=false">Save</div>
+            <div class="has-submenu" style="position:relative;padding:6px 8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div class="menu-item" (mouseenter)="fileMenuOpen=true" (click)="fileMenuOpen=false">Download</div>
+                <small style="color:#666">▸</small>
+              </div>
+              <!-- submenu shown on hover via CSS below -->
+              <div class="submenu" style="display:none;position:absolute;left:100%;top:0;margin-left:6px;background:white;border:1px solid #ddd;box-shadow:0 6px 18px rgba(0,0,0,0.08);padding:6px;border-radius:4px;min-width:140px;">
+                  <div class="menu-item" (click)="downloadDot(); fileMenuOpen=false">DOT (.dot)</div>
+                  <div class="menu-item" (click)="downloadJson(); fileMenuOpen=false">JSON (.json)</div>
+              </div>
+            </div>
+              <div class="menu-item" style="display:flex;justify-content:space-between" (click)="triggerImport(); fileMenuOpen=false">
+                <span>Import JSON/DOT</span>
+                <small style="color:#666">.json/.dot</small>
+              </div>
+          </div>
+        </div>
+        <div style="font-weight:600">Policy Builder</div>
+      </div>
+    <div style="color:#666;font-size:13px">Use the editor to add nodes and edges. Select a node to edit properties.</div>
+  </div>
+
+  <div class="container" style="display:flex;gap:16px;align-items:flex-start">
+    <div class="right-pane" style="flex:0 0 240px;">
+      <h3 style="margin-top:8px">Info</h3>
+      <p></p>
+    </div>
+    <div class="left-pane" style="flex:1;">
+      <app-graph-editor #editor></app-graph-editor>
+    </div>
+  </div>
+</div>
+
+<!-- hidden file input used for import -->
+<input #fileInput type="file" accept=".json,.dot" style="display:none" (change)="onFileSelected($event)" />

@@ -1,0 +1,59 @@
+html, body, app-root {
+  height: 100%;
+  margin: 0;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
+}
+
+.container {
+  display: flex;
+  height: 100vh;
+  background: #f3f6fb;
+  align-items: stretch;
+}
+
+.left-pane {
+  flex: 1 1 70%;
+  border-right: 1px solid #e1e8f0;
+  padding: 16px;
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(16,24,40,0.04) inset;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* allow children to shrink without causing horizontal scroll */
+}
+
+.right-pane {
+  flex: 0 0 360px;
+  width: 360px;
+  padding: 16px;
+  background: #f7f9fc;
+}
+
+.controls { margin-bottom: 8px; }
+
+#cy { width: 100%; border: 1px solid #cfe3ff; background: #e9f5ff; border-radius: 6px; display:flex; align-items:center; justify-content:center; color:#245; }
+.controls { margin-bottom: 8px; }
+
+/* Make cy expand to fill remaining vertical space inside left-pane */
+.cy-wrapper {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0; /* necessary for correct flex children clipping */
+}
+#cy { flex: 1 1 auto; min-height: 0; }
+
+.toolbar { margin-bottom: 8px; }
+
+h2 { margin-top: 0; color: #1e293b }
+h3 { margin-top: 0; color: #0f172a }
+
+.toolbar { display:flex; gap:8px; align-items:center }
+
+.palette { display:flex; gap:6px; margin-top:8px }
+.var { padding:6px 8px; border:1px solid #d6dde6; background:#fff; border-radius:6px; cursor:grab; box-shadow: 0 1px 0 rgba(16,24,40,0.04); }
+.var:active { cursor:grabbing }
+
+button { background:#0ea5e9; border:none; color:#fff; padding:6px 10px; border-radius:6px; cursor:pointer }
+button[disabled] { opacity:0.5; cursor:default }
+
+.right-pane p { color:#334155 }
