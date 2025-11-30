@@ -177,7 +177,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
           }
         },
         {
-          selector: 'node.selected',
+          selector: 'node:selected',
           style: {
             // selected node: AWS-like highlighted look
             'background-color': '#f1faff',
@@ -232,7 +232,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
             'background-color': '#fff7f7'
           }
         },
-        { selector: '.selected', style: { 'overlay-opacity': 0.25, 'overlay-color': '#ffc107' } }
+        { selector: ':selected', style: { 'overlay-opacity': 0.25, 'overlay-color': '#ffc107' } }
       ],
       layout: { name: 'grid' },
       // enable box selection so left-drag can multi-select. Disable user panning
