@@ -76,6 +76,8 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     private _modalMoveHandler: any = null;
     private _modalUpHandler: any = null;
   searchError: string | null = null;
+  // track whether the search input is focused (for UI styling)
+  searchHasFocus = false;
   // track currently-created temporary edge id so we only ever have one
   currentTempEdgeId: string | null = null;
   // track a temporary node created when dropping an edge into empty canvas (leaf preview)
@@ -155,6 +157,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
             'font-family': '"Amazon Ember", Inter, Roboto, Arial, sans-serif',
             // unselected stroke
             'border-width': 1,
+            'border-radius': 12,
             'border-color': 'rgb(104, 112, 120)',
             'text-outline-width': 0,
             'text-outline-color': '#ffffff'
@@ -626,10 +629,12 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     this._boundOutsideClickHandler = (ev: MouseEvent) => {
       try {
         const tgt = ev.target as HTMLElement | null;
+        // prefer checking the full component root so clicks on the right-hand panel
+        // (where the edge creation inputs live) do not cancel the draft.
+        const root = this.rootContainer && this.rootContainer.nativeElement ? this.rootContainer.nativeElement : null;
         const container = this.cyContainer && this.cyContainer.nativeElement ? this.cyContainer.nativeElement : null;
-        if (!container) return;
-        // if the click occurred inside the cy container, do nothing
-        if (tgt && container.contains(tgt)) return;
+        // if click occurred inside the component root or inside the cy container, do nothing
+        if (tgt && ((root && root.contains(tgt)) || (container && container.contains(tgt)))) return;
         // otherwise clear selection
         this.zone.run(() => this.clearSelection());
       } catch (e) { /* ignore */ }
@@ -1452,7 +1457,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
 
   // return style object for modal placement
   getSearchModalStyle(): any {
-    const base: any = { position: 'fixed', background: '#fff', border: '1px solid #ccc', padding: '12px', zIndex: 180, boxShadow: '0 6px 20px rgba(0,0,0,0.12)', width: '420px', borderRadius: '4px' };
+    const base: any = { position: 'fixed', zIndex: 180, width: '420px', borderRadius: '4px' };
     try {
       if (this.searchModalPlacement === 'center') {
         base.left = '50%';
