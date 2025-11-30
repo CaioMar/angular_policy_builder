@@ -84,6 +84,14 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _conditionParseTimer: any = null;
   // inline editor element for editing leaf labels directly on canvas
   private _inlineEditorEl: HTMLInputElement | null = null;
+  // box selection state (left-drag)
+  private _isBoxSelecting = false;
+  private _boxStart = { x: 0, y: 0 };
+  private _boxEl: HTMLDivElement | null = null;
+  private _boxMoveHandler: any = null;
+  private _boxUpHandler: any = null;
+  // flag to prevent node creation after a drag-select
+  private _wasBoxSelecting = false;
   private _tooltipEl: HTMLDivElement | null = null;
   // bound key handler so we can remove it on destroy
   private _boundKeyHandler: any = null;
@@ -93,6 +101,21 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _isResizerDragging = false;
   private _resizerMoveHandler: any = null;
   private _resizerUpHandler: any = null;
+  // canvas settings
+  canvasSettingsVisible = false;
+  bgPattern: 'plain' | 'dots' | 'grid' = 'dots';
+  bgColor = '#ffffff';
+  // zoom sensitivity controls how fast zoom responds to wheel deltas; smaller = slower
+  zoomSensitivity = 0.004;
+  // explicit zoom level (1.0 == 100%) controlled by slider
+  zoomLevel = 1.0;
+  private _wheelHandler: any = null;
+  // right-button pan state
+  private _isRightPanning = false;
+  private _panLast = { x: 0, y: 0 };
+  private _panMoveHandler: any = null;
+  private _panUpHandler: any = null;
+  private _rightDownHandler: any = null;
 
   constructor(private zone: NgZone) { }
 
@@ -211,8 +234,25 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
         },
         { selector: '.selected', style: { 'overlay-opacity': 0.25, 'overlay-color': '#ffc107' } }
       ],
-      layout: { name: 'grid' }
+      layout: { name: 'grid' },
+      // enable box selection so left-drag can multi-select. Disable user panning
+      // so only our custom right-button panning works via programmatic panBy().
+      boxSelectionEnabled: true,
+      panningEnabled: true,
+      userPanningEnabled: false
     });
+
+    // disable cytoscape's default wheel zoom and install our custom handler
+    try { if (this.cy && typeof this.cy.userZoomingEnabled === 'function') this.cy.userZoomingEnabled(false); } catch (e) { /* ignore */ }
+    // ensure cytoscape does not allow user panning gestures (we handle right-button panning manually)
+    try { if (this.cy && typeof this.cy.userPanningEnabled === 'function') this.cy.userPanningEnabled(false); } catch (e) { /* ignore */ }
+    this._wheelHandler = (ev: WheelEvent) => this._onWheel(ev);
+    try { this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.addEventListener('wheel', this._wheelHandler, { passive: false }); } catch (e) { /* ignore */ }
+    // prevent context menu on right-click inside cy container so right-drag panning feels native
+    try { this._rightDownHandler = (ev: MouseEvent) => this._onCyMouseDown(ev); this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.addEventListener('mousedown', this._rightDownHandler); } catch (e) { /* ignore */ }
+    try { this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.addEventListener('contextmenu', (e:any) => e.preventDefault()); } catch (e) { /* ignore */ }
+    // apply initial background and zoom level
+    setTimeout(() => { this.applyBackground(); this.setZoomLevel(this.zoomLevel); }, 0);
 
     this.cy.on('tap', 'node', (evt: any) => {
       const node = evt.target;
@@ -276,6 +316,8 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
 
     this.cy.on('tap', (evt: any) => {
       if (evt.target === this.cy) {
+        // ignore canvas tap if it was just a box-select drag
+        if (this._wasBoxSelecting) { this._wasBoxSelecting = false; return; }
         // click on empty canvas: create a new input node at click position and open search modal
         try {
           const pos = evt.position || evt.renderedPosition || { x: 100, y: 100 };
@@ -290,7 +332,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
           // select the new node
           this.clearSelection();
           this.selectedNode = node;
-          try { const el = this.cy.getElementById(node.id); if (el) el.addClass('selected'); } catch (e) { /* ignore */ }
+          try { const el = this.cy.getElementById(node.id); if (el) { try { if (el.select) el.select(); } catch (e) { } try { el.addClass && el.addClass('selected'); } catch (ee) { } } } catch (e) { /* ignore */ }
           // open search modal so user can type variable name
           const rect = this.cyContainer.nativeElement.getBoundingClientRect();
           this.searchModalPos = { x: pos.x, y: pos.y };
@@ -305,6 +347,21 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
         }
         return;
       }
+    });
+
+    // Left-button drag box selection on empty canvas: create overlay and select nodes inside
+    this.cy.on('mousedown', (evt: any) => {
+      try {
+        const orig = (evt.originalEvent as MouseEvent) || null;
+        if (!(orig && orig.button === 0)) return; // only left button
+        if (evt.target !== this.cy) return; // only start when clicking on background/core
+        this._boxStart = { x: orig.clientX, y: orig.clientY };
+        this._isBoxSelecting = false;
+        this._boxMoveHandler = (m: MouseEvent) => this._onBoxMouseMove(m);
+        this._boxUpHandler = (u: MouseEvent) => this._onBoxMouseUp(u);
+        window.addEventListener('mousemove', this._boxMoveHandler);
+        window.addEventListener('mouseup', this._boxUpHandler);
+      } catch (e) { /* ignore */ }
     });
 
     // Drag-to-create-edge: start when user presses mouse on an already-selected node and moves
@@ -434,9 +491,46 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
           const tag = (active.tagName || '').toUpperCase();
           if (tag === 'INPUT' || tag === 'TEXTAREA' || (active as any).isContentEditable) return;
         }
-        if ((ev.key === 'Delete' || ev.key === 'Del' || ev.key === 'Backspace') && this.selectedNode) {
+        if (ev.key === 'Delete' || ev.key === 'Del' || ev.key === 'Backspace') {
           ev.preventDefault();
-          this.zone.run(() => this.deleteSelected());
+          try {
+            // Compute selection consistently: union of Cytoscape ':selected' and legacy '.selected'
+            let sels: any = null;
+            try {
+              const s1 = this.cy ? this.cy.elements(':selected') : null;
+              const s2 = this.cy ? this.cy.elements('.selected') : null;
+              if (s1 && typeof s1.union === 'function') sels = s1.union(s2);
+              else {
+                const ids = new Set<string>();
+                try { s1 && s1.forEach((e: any) => ids.add(e.id())); } catch (e) { /* ignore */ }
+                try { s2 && s2.forEach((e: any) => ids.add(e.id())); } catch (e) { /* ignore */ }
+                const arr: any[] = [];
+                ids.forEach(id => { try { const el = this.cy.getElementById(id); if (el) arr.push(el); } catch (e) { /* ignore */ } });
+                sels = this.cy && typeof this.cy.collection === 'function' ? this.cy.collection(arr) : arr;
+              }
+            } catch (e) {
+              try { sels = this.cy.elements('.selected'); } catch (ee) { sels = null; }
+            }
+
+            // Debug logging to help diagnose selection/delete issues
+            try {
+              const ids: string[] = [];
+              if (sels && typeof sels.forEach === 'function') sels.forEach((el: any) => { try { ids.push(el.id()); } catch (e) { /* ignore */ } });
+              console.log('[GraphEditor] Delete key pressed. selectionCount=', ids.length, 'ids=', ids, 'modelSelectedNode=', this.selectedNode ? this.selectedNode.id : null, 'modelSelectedEdge=', this.selectedEdge ? this.selectedEdge.id : null);
+            } catch (e) { console.log('[GraphEditor] Delete key pressed. (unable to enumerate selection)'); }
+
+            if (sels && sels.length && sels.length > 0) {
+              this.zone.run(() => this.deleteSelectedMultiple());
+            } else if (this.selectedNode || this.selectedEdge) {
+              // fallback to single-selection delete
+              this.zone.run(() => this.deleteSelected());
+            } else {
+              console.debug('[GraphEditor] Delete key pressed but nothing selected.');
+            }
+          } catch (e) {
+            // on any error, fallback to single delete
+            this.zone.run(() => this.deleteSelected());
+          }
         }
       } catch (e) { /* ignore */ }
     };
@@ -473,6 +567,8 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     // remove any modal handlers
     try { if (this._modalMoveHandler) window.removeEventListener('mousemove', this._modalMoveHandler); } catch (e) { /* ignore */ }
     try { if (this._modalUpHandler) window.removeEventListener('mouseup', this._modalUpHandler); } catch (e) { /* ignore */ }
+    try { if (this._wheelHandler) this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.removeEventListener('wheel', this._wheelHandler); } catch (e) { /* ignore */ }
+    try { if (this._rightDownHandler) this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.removeEventListener('mousedown', this._rightDownHandler); } catch (e) { /* ignore */ }
   }
 
   
@@ -502,26 +598,32 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       // focus the condition value input so the user can start typing immediately
       setTimeout(() => this.focusConditionValueInput(), 0);
       // highlight both nodes
-      this.cy.nodes().forEach((n: any) => n.removeClass('selected'));
+      try { this.cy.elements().unselect(); } catch (e) { try { this.cy.nodes().forEach((n: any) => n.removeClass('selected')); } catch (ee) { /* ignore */ } }
       const s = this.cy.getElementById(this.connectSource);
       const t = this.cy.getElementById(id);
-      if (s) { s.addClass('selected'); }
-      if (t) { t.addClass('selected'); }
+      try { if (s) { try { if (s.select) s.select(); } catch (e) { } try { s.addClass && s.addClass('selected'); } catch (ee) { } } } catch (e) { /* ignore */ }
+      try { if (t) { try { if (t.select) t.select(); } catch (e) { } try { t.addClass && t.addClass('selected'); } catch (ee) { } } } catch (e) { /* ignore */ }
       // keep selectedNode as the target for editing
       this.selectedNode = this.nodes.find(n => n.id === id) || null;
       return;
     }
 
     // start a new selection (single click)
+    // clear prior selection state both in model and in Cytoscape, then select this node
+    try { if (this.cy && typeof this.cy.elements === 'function') this.cy.elements().unselect(); } catch (e) { /* ignore */ }
     this.clearSelection();
     const found = this.nodes.find(n => n.id === id) || null;
     this.selectedNode = found;
     const el = this.cy.getElementById(id);
-    if (el) { el.addClass('selected'); }
+    try {
+      if (el) {
+        try { if (el.select) el.select(); } catch (e) { /* ignore */ }
+        try { el.addClass && el.addClass('selected'); } catch (ee) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
     this.connectSource = id;
-    // clear any selected edge
+    // clear any selected edge in the model
     this.selectedEdge = null;
-    try { this.cy.edges().forEach((ed: any) => ed.removeClass('selected')); } catch (e) { /* ignore */ }
     // store last selection snapshot
     try { this.lastSelectionSnapshot = { kind: 'node', data: Object.assign({}, found) }; } catch (e) { this.lastSelectionSnapshot = null; }
   }
@@ -529,6 +631,8 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   clearSelection(): void {
     this.selectedNode = null;
     this.selectedEdge = null;
+    // clear Cytoscape's selection state and any legacy class markers
+    try { if (this.cy && typeof this.cy.elements === 'function') this.cy.elements().unselect(); } catch (e) { /* ignore */ }
     try { this.cy.nodes().forEach((n: any) => n.removeClass('selected')); } catch (e) { /* ignore */ }
     try { this.cy.edges().forEach((e: any) => e.removeClass('selected')); } catch (e) { /* ignore */ }
     this.connectSource = '';
@@ -560,7 +664,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       this.selectedEdge = found;
       if (found) {
         // highlight edge
-        try { const el = this.cy.getElementById(found.id); if (el) el.addClass('selected'); } catch (e) { /* ignore */ }
+        try { const el = this.cy.getElementById(found.id); if (el) { try { if (el.select) el.select(); } catch (se) { /* ignore */ } try { el.addClass && el.addClass('selected'); } catch (ee) { /* ignore */ } } } catch (e) { /* ignore */ }
         // store last selection snapshot
         try { this.lastSelectionSnapshot = { kind: 'edge', data: Object.assign({}, found) }; } catch (e) { this.lastSelectionSnapshot = null; }
       }
@@ -778,10 +882,10 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     this.edgeDraft = null;
     this.connectTarget = '';
     // keep source selected so user can start again or clear
-    this.cy.nodes().forEach((n: any) => n.removeClass('selected'));
+    try { this.cy.elements().unselect(); } catch (e) { try { this.cy.nodes().forEach((n: any) => n.removeClass('selected')); } catch (ee) { /* ignore */ } }
     if (this.connectSource) {
       const s = this.cy.getElementById(this.connectSource);
-      if (s) s.addClass('selected');
+      try { if (s) { try { if (s.select) s.select(); } catch (e) { } try { s.addClass && s.addClass('selected'); } catch (ee) { } } } catch (e) { /* ignore */ }
       this.selectedNode = this.nodes.find(n => n.id === this.connectSource) || null;
     } else {
       this.selectedNode = null;
@@ -1325,12 +1429,14 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   }
 
   deleteSelected(): void {
+    console.log('[GraphEditor] deleteSelected() called. model selectedNode=', this.selectedNode ? this.selectedNode.id : null, 'selectedEdge=', this.selectedEdge ? this.selectedEdge.id : null);
     // if an edge is selected, remove it
     if (this.selectedEdge) {
       const eid = this.selectedEdge.id;
       this.edges = this.edges.filter(e => e.id !== eid);
       try { const el = this.cy.getElementById(eid); if (el) this.cy.remove(el); } catch (e) { /* ignore */ }
       this.selectedEdge = null;
+      console.log('[GraphEditor] deleteSelected() removed edge', eid);
       return;
     }
     // otherwise remove selected node and connected edges
@@ -1343,6 +1449,92 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     // remove connected edges
     try { const connected = this.cy.edges().filter((ed: any) => ed.data('source') === id || ed.data('target') === id); this.cy.remove(connected); } catch (e) { /* ignore */ }
     this.clearSelection();
+  }
+
+  // Delete all currently-selected elements (nodes and edges).
+  // This handles multi-selection created by box-select or manual multi-select.
+  deleteSelectedMultiple(): void {
+    console.log('[GraphEditor] deleteSelectedMultiple() called');
+    try {
+      if (!this.cy) return;
+      // prefer Cytoscape ':selected' but fall back to the legacy '.selected' class
+      let sels: any = null;
+      try {
+        const s1 = this.cy.elements(':selected');
+        const s2 = this.cy.elements('.selected');
+        // union if available
+        if (s1 && typeof s1.union === 'function') sels = s1.union(s2);
+        else {
+          // build a simple collection by ids
+          const ids = new Set<string>();
+          try { s1 && s1.forEach((e: any) => ids.add(e.id())); } catch (e) { /* ignore */ }
+          try { s2 && s2.forEach((e: any) => ids.add(e.id())); } catch (e) { /* ignore */ }
+          const arr: any[] = [];
+          ids.forEach(id => { try { const el = this.cy.getElementById(id); if (el) arr.push(el); } catch (e) {} });
+          sels = this.cy.collection ? this.cy.collection(arr) : arr;
+        }
+      } catch (e) {
+        try { sels = this.cy.elements('.selected'); } catch (ee) { sels = null; }
+      }
+      if (!sels || !sels.length) return;
+
+      // collect ids to remove
+      const nodeIdsToRemove: Set<string> = new Set();
+      const edgeIdsToRemove: Set<string> = new Set();
+
+      sels.forEach((el: any) => {
+        try {
+          if (el.group && el.group() === 'nodes') nodeIdsToRemove.add(el.id());
+          else if (el.group && el.group() === 'edges') edgeIdsToRemove.add(el.id());
+        } catch (e) { /* ignore per element */ }
+      });
+
+      // remove edges connected to nodes-to-remove as well
+      if (nodeIdsToRemove.size) {
+        this.edges = this.edges.filter(e => !(nodeIdsToRemove.has(e.source) || nodeIdsToRemove.has(e.target) || edgeIdsToRemove.has(e.id)));
+      } else {
+        this.edges = this.edges.filter(e => !edgeIdsToRemove.has(e.id));
+      }
+
+      // remove nodes from model
+      if (nodeIdsToRemove.size) {
+        this.nodes = this.nodes.filter(n => !nodeIdsToRemove.has(n.id));
+      }
+
+      // remove from Cytoscape by calling `.remove()` on each element directly (edges first)
+      try {
+        if (edgeIdsToRemove.size) {
+          edgeIdsToRemove.forEach(id => {
+            try {
+              const el = this.cy.getElementById(id);
+              if (el && typeof el.remove === 'function') {
+                el.remove();
+                console.log('[GraphEditor] removed cy edge', id);
+              }
+            } catch (e) { /* ignore per edge */ }
+          });
+        }
+        if (nodeIdsToRemove.size) {
+          nodeIdsToRemove.forEach(id => {
+            try {
+              const el = this.cy.getElementById(id);
+              if (el && typeof el.remove === 'function') {
+                el.remove();
+                console.log('[GraphEditor] removed cy node', id);
+              }
+            } catch (e) { /* ignore per node */ }
+          });
+        }
+        // ensure Cytoscape selection state is cleared
+        try { if (this.cy && typeof this.cy.elements === 'function') this.cy.elements().unselect(); } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
+
+      // clear selection vars
+      this.selectedNode = null;
+      this.selectedEdge = null;
+      this.clearSelection();
+      console.log('[GraphEditor] deleteSelectedMultiple() finished. nodesRemaining=', this.nodes.length, 'edgesRemaining=', this.edges.length);
+    } catch (e) { /* ignore */ }
   }
 
   exportJSON(): string {
@@ -1551,4 +1743,223 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   }
 
   onDragOver(ev: DragEvent) { ev.preventDefault(); }
+
+  // Canvas settings helpers
+  toggleCanvasSettings(ev: MouseEvent): void {
+    ev.stopPropagation();
+    this.canvasSettingsVisible = !this.canvasSettingsVisible;
+  }
+
+  applyBackground(): void {
+    try {
+      const el = this.cyContainer && this.cyContainer.nativeElement ? this.cyContainer.nativeElement : null;
+      if (!el) return;
+      // base color
+      el.style.backgroundColor = this.bgColor || '#ffffff';
+      // pattern
+      if (this.bgPattern === 'plain') {
+        el.style.backgroundImage = 'none';
+      } else if (this.bgPattern === 'dots') {
+        // dotted pattern
+        el.style.backgroundImage = 'radial-gradient(' + (this._mixColor('#e6e6e6', this.bgColor) || '#e6e6e6') + ' 1px, transparent 1px)';
+        el.style.backgroundSize = '12px 12px';
+        el.style.backgroundRepeat = 'repeat';
+      } else if (this.bgPattern === 'grid') {
+        // subtle grid
+        const line = this._mixColor('#e6e6e6', this.bgColor) || '#e6e6e6';
+        el.style.backgroundImage = `linear-gradient(0deg, transparent 23px, ${line} 24px), linear-gradient(90deg, transparent 23px, ${line} 24px)`;
+        el.style.backgroundSize = '24px 24px';
+        el.style.backgroundRepeat = 'repeat';
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  applyZoomSensitivity(): void {
+    // nothing to set on cytoscape directly since we intercept wheel events; value updated via binding
+  }
+
+  // set zoom to explicit level (0.2 - 3). Centers on viewport center for clarity.
+  setZoomLevel(val: number): void {
+    try {
+      this.zoomLevel = Math.max(0.2, Math.min(3, Number(val)));
+      const rect = this.cyContainer.nativeElement.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      try { this.cy.zoom({ level: this.zoomLevel, position: { x: centerX, y: centerY } }); } catch (e) { try { this.cy.zoom(this.zoomLevel); } catch (ee) { /* ignore */ } }
+    } catch (e) { /* ignore */ }
+  }
+
+  // custom right-button panning handlers
+  private _onCyMouseDown(ev: MouseEvent): void {
+    try {
+      if (ev.button !== 2) return; // only handle right-button
+      ev.preventDefault();
+      this._isRightPanning = true;
+      this._panLast = { x: ev.clientX, y: ev.clientY };
+      this._panMoveHandler = (m: MouseEvent) => {
+        try {
+          const dx = m.clientX - this._panLast.x;
+          const dy = m.clientY - this._panLast.y;
+          this.cy.panBy({ x: dx, y: dy });
+          this._panLast = { x: m.clientX, y: m.clientY };
+        } catch (e) { /* ignore */ }
+      };
+      this._panUpHandler = (u: MouseEvent) => {
+        try { this._isRightPanning = false; if (this._panMoveHandler) { window.removeEventListener('mousemove', this._panMoveHandler); this._panMoveHandler = null; } if (this._panUpHandler) { window.removeEventListener('mouseup', this._panUpHandler); this._panUpHandler = null; } } catch (e) { /* ignore */ }
+      };
+      window.addEventListener('mousemove', this._panMoveHandler);
+      window.addEventListener('mouseup', this._panUpHandler);
+    } catch (e) { /* ignore */ }
+  }
+
+  // box-select mouse move
+  private _onBoxMouseMove(ev: MouseEvent): void {
+    try {
+      const rect = this.cyContainer.nativeElement.getBoundingClientRect();
+      const sx = this._boxStart.x;
+      const sy = this._boxStart.y;
+      const mx = ev.clientX;
+      const my = ev.clientY;
+      const dx = Math.abs(mx - sx);
+      const dy = Math.abs(my - sy);
+      // start showing box only after small threshold to avoid click jitter
+      if (!this._isBoxSelecting && (dx > 6 || dy > 6)) {
+        this._isBoxSelecting = true;
+        // create overlay
+        const box = document.createElement('div');
+        box.style.position = 'absolute';
+        box.style.pointerEvents = 'none';
+        box.style.border = '1px dashed rgba(0,0,0,0.35)';
+        box.style.background = 'transparent';
+        box.style.zIndex = '1000';
+        this.cyContainer.nativeElement.appendChild(box);
+        this._boxEl = box;
+      }
+      if (!this._isBoxSelecting || !this._boxEl) return;
+      const left = Math.min(sx, mx) - rect.left;
+      const top = Math.min(sy, my) - rect.top;
+      const width = Math.abs(mx - sx);
+      const height = Math.abs(my - sy);
+      this._boxEl.style.left = Math.max(0, left) + 'px';
+      this._boxEl.style.top = Math.max(0, top) + 'px';
+      this._boxEl.style.width = Math.max(0, width) + 'px';
+      this._boxEl.style.height = Math.max(0, height) + 'px';
+    } catch (e) { /* ignore */ }
+  }
+
+  // box-select mouse up: select nodes inside rectangle
+  private _onBoxMouseUp(ev: MouseEvent): void {
+    try {
+      if (this._boxMoveHandler) { window.removeEventListener('mousemove', this._boxMoveHandler); this._boxMoveHandler = null; }
+      if (this._boxUpHandler) { window.removeEventListener('mouseup', this._boxUpHandler); this._boxUpHandler = null; }
+      if (!this._isBoxSelecting) {
+        this._wasBoxSelecting = false;
+        return;
+      }
+      // compute final rect relative to container
+      const rect = this.cyContainer.nativeElement.getBoundingClientRect();
+      const sx = this._boxStart.x - rect.left;
+      const sy = this._boxStart.y - rect.top;
+      const ex = ev.clientX - rect.left;
+      const ey = ev.clientY - rect.top;
+      const left = Math.min(sx, ex);
+      const top = Math.min(sy, ey);
+      const right = Math.max(sx, ex);
+      const bottom = Math.max(sy, ey);
+
+      // clear previous selection (use cytoscape unselect to clear native selection state)
+      try { this.cy.elements().unselect(); } catch (e) { try { this.cy.nodes().forEach((n: any) => n.removeClass('selected')); } catch (ee) { /* ignore */ } }
+
+      const selectedIds: string[] = [];
+      const selectedEls: any[] = [];
+      try {
+        this.cy.nodes().forEach((n: any) => {
+          try {
+            const p = n.renderedPosition();
+            if (p && p.x != null) {
+              const x = p.x; const y = p.y;
+              if (x >= left && x <= right && y >= top && y <= bottom) {
+                selectedIds.push(n.id());
+                selectedEls.push(n);
+              }
+            }
+          } catch (e) { /* ignore per node */ }
+        });
+      } catch (e) { /* ignore */ }
+
+      // select all found elements as a collection so Cytoscape's selection state and styles update together
+      try {
+        if (selectedEls.length) {
+          try {
+            const coll = (this.cy && typeof this.cy.collection === 'function') ? this.cy.collection(selectedEls) : null;
+            if (coll && typeof coll.select === 'function') {
+              coll.select();
+            } else {
+              // fallback: select individually
+              selectedEls.forEach((el: any) => { try { if (el.select) el.select(); else if (el.addClass) el.addClass('selected'); } catch (ee) { /* ignore */ } });
+            }
+          } catch (e) {
+            // best-effort fallback
+            selectedEls.forEach((el: any) => { try { if (el.select) el.select(); else if (el.addClass) el.addClass('selected'); } catch (ee) { /* ignore */ } });
+          }
+        }
+      } catch (e) { /* ignore */ }
+
+      // update model-level selection: clear single selection and set last snapshot
+      this.selectedNode = null;
+      this.selectedEdge = null;
+      if (selectedIds.length) {
+        try { this.lastSelectionSnapshot = { kind: 'node', data: { id: selectedIds[0], label: this.getNodeLabel(selectedIds[0]) } }; } catch (e) { this.lastSelectionSnapshot = null; }
+      }
+
+      // cleanup overlay
+      if (this._boxEl && this._boxEl.parentNode) { try { this._boxEl.parentNode.removeChild(this._boxEl); } catch (e) { /* ignore */ } }
+      this._boxEl = null;
+      this._isBoxSelecting = false;
+      this._wasBoxSelecting = true;
+    } catch (e) { /* ignore */ }
+  }
+
+  private _onWheel(ev: WheelEvent): void {
+    try {
+      // if user is focusing an input, let it scroll normally
+      const active = document.activeElement as HTMLElement | null;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || (active as any).isContentEditable)) return;
+      ev.preventDefault();
+      // compute zoom factor; negative deltaY -> zoom in
+      const delta = -ev.deltaY; // invert so wheel-up zooms in
+      const factor = 1 + (delta * this.zoomSensitivity);
+      const cur = this.cy.zoom();
+      let next = cur * factor;
+      // clamp
+      next = Math.max(Math.min(next, 3), 0.2);
+      // zoom to pointer position if available
+      const rect = this.cyContainer.nativeElement.getBoundingClientRect();
+      const centerX = ev.clientX - rect.left;
+      const centerY = ev.clientY - rect.top;
+      try { this.cy.zoom({ level: next, position: { x: centerX, y: centerY } }); } catch (e) { try { this.cy.zoom(next); } catch (ee) { /* ignore */ } }
+    } catch (e) { /* ignore */ }
+  }
+
+  // tiny helper to mix two hex colors (returns a hex) - used to tone pattern color against bg
+  private _mixColor(fore: string, back: string): string {
+    try {
+      const f = this._hexToRgb(fore);
+      const b = this._hexToRgb(back);
+      if (!f || !b) return fore;
+      const r = Math.round((f.r + b.r) / 2);
+      const g = Math.round((f.g + b.g) / 2);
+      const bl = Math.round((f.b + b.b) / 2);
+      return `rgb(${r}, ${g}, ${bl})`;
+    } catch (e) { return fore; }
+  }
+
+  private _hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    try {
+      let h = hex.replace('#', '');
+      if (h.length === 3) h = h.split('').map(c => c + c).join('');
+      const int = parseInt(h, 16);
+      return { r: (int >> 16) & 255, g: (int >> 8) & 255, b: int & 255 };
+    } catch (e) { return null; }
+  }
 }
