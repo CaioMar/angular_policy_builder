@@ -1,21 +1,9 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild, NgZone } from '@angular/core';
+import { Subscription } from 'rxjs';
+import { GraphStoreService } from './services/graph-store.service';
 import * as cytoscape from 'cytoscape';
-
-interface NodeModel {
-  id: string;
-  label: string;
-  type?: string;
-  expr?: string;
-}
-
-interface EdgeModel {
-  id: string;
-  source: string;
-  target: string;
-  label?: string;
-  condition?: { variable: string; op: string; value: string };
-  output?: string;
-}
+import { NodeModel } from './models/node.model';
+import { EdgeModel } from './models/edge.model';
 
 @Component({
   selector: 'app-graph-editor',
@@ -128,7 +116,10 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _rightDownHandler: any = null;
   private _resizeWindowHandler: any = null;
 
-  constructor(private zone: NgZone) { }
+  private _nodesSub: Subscription | null = null;
+  private _edgesSub: Subscription | null = null;
+
+  constructor(private zone: NgZone, private graphStore: GraphStoreService) { }
   onHamburgerOpen(): void {
     try { console.log('[GraphEditor] hamburger menu open'); } catch (e) { /* ignore */ }
   }
@@ -277,6 +268,12 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     // apply initial background and zoom level
     setTimeout(() => { this.applyBackground(); this.setZoomLevel(this.zoomLevel); }, 0);
 
+    // subscribe to graph store so we keep a local mirror (allows incremental migration)
+    try {
+      this._nodesSub = this.graphStore.nodes$.subscribe(ns => this.nodes = ns || []);
+      this._edgesSub = this.graphStore.edges$.subscribe(es => this.edges = es || []);
+    } catch (e) { /* ignore */ }
+
     this.cy.on('tap', 'node', (evt: any) => {
       const node = evt.target;
       const id = node.id();
@@ -345,9 +342,8 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
         try {
           const pos = evt.position || evt.renderedPosition || { x: 100, y: 100 };
           const id = 'n' + (this.nodeCounter++);
-          const node: NodeModel = { id, label: id, type: 'input' };
-          (node as any).position = { x: pos.x, y: pos.y };
-          this.nodes.push(node);
+          const node: NodeModel = { id, label: id, type: 'input', position: { x: pos.x, y: pos.y } };
+          this.graphStore.addNode(node);
           try {
             const el = this.cy.add({ group: 'nodes', data: { id: node.id, label: node.label, type: node.type }, position: (node as any).position });
             try { el.addClass('new-look-state-node'); } catch (e) { /* ignore */ }
@@ -698,6 +694,9 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     try { if (this._wheelHandler) this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.removeEventListener('wheel', this._wheelHandler); } catch (e) { /* ignore */ }
     try { if (this._rightDownHandler) this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.removeEventListener('mousedown', this._rightDownHandler); } catch (e) { /* ignore */ }
     try { if (this._resizeWindowHandler) window.removeEventListener('resize', this._resizeWindowHandler); } catch (e) { /* ignore */ }
+    // unsubscribe from store
+    try { if (this._nodesSub) this._nodesSub.unsubscribe(); } catch (e) { /* ignore */ }
+    try { if (this._edgesSub) this._edgesSub.unsubscribe(); } catch (e) { /* ignore */ }
   }
 
   
@@ -705,7 +704,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   addNode(): void {
     const id = 'n' + (this.nodeCounter++);
     const node: NodeModel = { id, label: id, type: 'condition', expr: '' };
-    this.nodes.push(node);
+    this.graphStore.addNode(node);
     const el = this.cy.add({ group: 'nodes', data: { id: node.id, label: node.label } });
     try { el.addClass('new-look-state-node'); } catch (e) { /* ignore */ }
   }
@@ -805,7 +804,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     if (!this.selectedEdge) return;
     // find model edge and update
     const idx = this.edges.findIndex(e => e.id === this.selectedEdge!.id);
-    if (idx >= 0) this.edges[idx] = { ...this.selectedEdge };
+    if (idx >= 0) this.graphStore.updateEdge(this.selectedEdge.id, { ...this.selectedEdge });
     try {
       const el = this.cy.getElementById(this.selectedEdge.id);
       if (el) el.data('label', this.selectedEdge.label || '');
@@ -992,9 +991,8 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       }
       const leafId = 'leaf' + Date.now();
       const leafLabel = (this.edgeDraft.output || '').toString() || 'output';
-      const node: NodeModel = { id: leafId, label: leafLabel, type: 'leaf' };
-      (node as any).position = leafPos || undefined;
-      this.nodes.push(node);
+      const node: NodeModel = { id: leafId, label: leafLabel, type: 'leaf', position: leafPos || undefined };
+      this.graphStore.addNode(node);
       try {
         const added = this.cy.add({ group: 'nodes', data: { id: node.id, label: node.label, type: node.type }, position: (node as any).position || undefined });
         try { added.addClass('new-look-state-node'); added.addClass('leaf-node'); } catch (e) { /* ignore */ }
@@ -1003,13 +1001,13 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       // remove temp visuals and then create permanent edge to the leaf node
       this.removeCurrentTempEdge();
       const edge: EdgeModel = { id, source: this.edgeDraft.source, target: leafId, label, condition: cond, output: this.edgeDraft.output };
-      this.edges.push(edge);
+      this.graphStore.addEdge(edge);
       try { this.cy.add({ group: 'edges', data: { id: edge.id, source: edge.source, target: edge.target, label: edge.label } }); } catch (e) { /* ignore */ }
     } else {
       // normal edge to existing node
       this.removeCurrentTempEdge();
       const edge: EdgeModel = { id, source: this.edgeDraft.source, target: this.edgeDraft.target, label, condition: cond };
-      this.edges.push(edge);
+      this.graphStore.addEdge(edge);
       try { this.cy.add({ group: 'edges', data: { id: edge.id, source: edge.source, target: edge.target, label: edge.label } }); } catch (e) { /* ignore */ }
     }
     this.edgeDraft = null;
@@ -1158,7 +1156,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     if (!this.edgeDraft) return;
     // remove conflicting edges
     for (const ce of this.conflictingEdges) {
-      this.edges = this.edges.filter(e => e.id !== ce.id);
+      try { this.graphStore.removeEdge(ce.id); } catch (e) { /* ignore */ }
       try { const el = this.cy.getElementById(ce.id); if (el) this.cy.remove(el); } catch (e) { /* ignore */ }
     }
     this.conflictingEdges = [];
@@ -1205,13 +1203,13 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       // remove temp visuals then add edge
       this.removeCurrentTempEdge();
       const edge: EdgeModel = { id, source: this.edgeDraft.source, target: leafId, label, condition: cond, output: this.edgeDraft.output };
-      this.edges.push(edge);
+      this.graphStore.addEdge(edge);
       try { this.cy.add({ group: 'edges', data: { id: edge.id, source: edge.source, target: edge.target, label: edge.label } }); } catch (e) { /* ignore */ }
     } else {
       // remove temp edge
       this.removeCurrentTempEdge();
       const edge: EdgeModel = { id, source: this.edgeDraft.source, target: this.edgeDraft.target, label, condition: cond };
-      this.edges.push(edge);
+      this.graphStore.addEdge(edge);
       try { this.cy.add({ group: 'edges', data: { id: edge.id, source: edge.source, target: edge.target, label: edge.label } }); } catch (e) { /* ignore */ }
     }
     this.edgeDraft = null;
@@ -1293,16 +1291,13 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   }
 
   commitInlineEdit(nodeId: string, value: string): void {
-    // update model node label
-    const n = this.nodes.find(x => x.id === nodeId);
-    if (n) { n.label = value; }
+    // update model node label via store
+    try { this.graphStore.updateNode(nodeId, { label: value }); } catch (e) { /* ignore */ }
     try { const el = this.cy.getElementById(nodeId); if (el) el.data('label', value); } catch (e) { /* ignore */ }
     // propagate to edge.output for any incoming edges
-    for (const e of this.edges) {
-      if (e.target === nodeId) {
-        e.output = value;
-      }
-    }
+    try {
+      this.edges.forEach(e => { if (e.target === nodeId) { this.graphStore.updateEdge(e.id, { output: value }); } });
+    } catch (e) { /* ignore */ }
   }
 
   // Tooltip helpers
@@ -1622,7 +1617,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     // if an edge is selected, remove it
     if (this.selectedEdge) {
       const eid = this.selectedEdge.id;
-      this.edges = this.edges.filter(e => e.id !== eid);
+      try { this.graphStore.removeEdge(eid); } catch (e) { /* ignore */ }
       try { const el = this.cy.getElementById(eid); if (el) this.cy.remove(el); } catch (e) { /* ignore */ }
       this.selectedEdge = null;
       console.log('[GraphEditor] deleteSelected() removed edge', eid);
@@ -1631,8 +1626,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     // otherwise remove selected node and connected edges
     if (!this.selectedNode) return;
     const id = this.selectedNode.id;
-    this.nodes = this.nodes.filter(n => n.id !== id);
-    this.edges = this.edges.filter(e => e.source !== id && e.target !== id);
+    try { this.graphStore.removeNode(id); } catch (e) { /* ignore */ }
     const el = this.cy.getElementById(id);
     if (el) { this.cy.remove(el); }
     // remove connected edges
@@ -1678,41 +1672,16 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
         } catch (e) { /* ignore per element */ }
       });
 
-      // remove edges connected to nodes-to-remove as well
-      if (nodeIdsToRemove.size) {
-        this.edges = this.edges.filter(e => !(nodeIdsToRemove.has(e.source) || nodeIdsToRemove.has(e.target) || edgeIdsToRemove.has(e.id)));
-      } else {
-        this.edges = this.edges.filter(e => !edgeIdsToRemove.has(e.id));
-      }
-
-      // remove nodes from model
-      if (nodeIdsToRemove.size) {
-        this.nodes = this.nodes.filter(n => !nodeIdsToRemove.has(n.id));
-      }
-
-      // remove from Cytoscape by calling `.remove()` on each element directly (edges first)
+      // remove from store (edges and nodes)
       try {
+        edgeIdsToRemove.forEach(id => { try { this.graphStore.removeEdge(id); } catch (e) { /* ignore per edge */ } });
+        nodeIdsToRemove.forEach(id => { try { this.graphStore.removeNode(id); } catch (e) { /* ignore per node */ } });
+        // remove from Cytoscape by calling `.remove()` on each element directly (edges first)
         if (edgeIdsToRemove.size) {
-          edgeIdsToRemove.forEach(id => {
-            try {
-              const el = this.cy.getElementById(id);
-              if (el && typeof el.remove === 'function') {
-                el.remove();
-                console.log('[GraphEditor] removed cy edge', id);
-              }
-            } catch (e) { /* ignore per edge */ }
-          });
+          edgeIdsToRemove.forEach(id => { try { const el = this.cy.getElementById(id); if (el && typeof el.remove === 'function') { el.remove(); console.log('[GraphEditor] removed cy edge', id); } } catch (e) { /* ignore per edge */ } });
         }
         if (nodeIdsToRemove.size) {
-          nodeIdsToRemove.forEach(id => {
-            try {
-              const el = this.cy.getElementById(id);
-              if (el && typeof el.remove === 'function') {
-                el.remove();
-                console.log('[GraphEditor] removed cy node', id);
-              }
-            } catch (e) { /* ignore per node */ }
-          });
+          nodeIdsToRemove.forEach(id => { try { const el = this.cy.getElementById(id); if (el && typeof el.remove === 'function') { el.remove(); console.log('[GraphEditor] removed cy node', id); } } catch (e) { /* ignore per node */ } });
         }
         // ensure Cytoscape selection state is cleared
         try { if (this.cy && typeof this.cy.elements === 'function') this.cy.elements().unselect(); } catch (e) { /* ignore */ }
@@ -1876,8 +1845,9 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     try {
       const model = JSON.parse(text);
       if (!model.nodes) return;
-      this.nodes = model.nodes;
-      this.edges = model.edges || [];
+      this.graphStore.setNodes(model.nodes || []);
+      this.graphStore.setEdges(model.edges || []);
+      // reload cy visuals from the newly set store
       this.reloadGraph();
     } catch (e) {
       alert('Invalid JSON');
