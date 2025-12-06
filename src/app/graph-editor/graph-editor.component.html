@@ -1,7 +1,6 @@
 <div #rootContainer class="container" style="display:flex;align-items:stretch;height:auto;gap:0;box-sizing:border-box;">
   <div class="left-pane" style="flex:1;min-width:0;padding-right:12px">
     <div class="controls">
-      <app-hamburger-menu (open)="onHamburgerOpen()"></app-hamburger-menu>
       <div id="cy" #cyContainer (drop)="onDrop($event)" (dragover)="onDragOver($event)"></div>
       <!-- SVG overlay: fallback visible line drawn on top during drag (pointer-events:none) -->
       <svg class="edge-overlay" [style.display]="isEdgeDragging ? 'block' : 'none'">

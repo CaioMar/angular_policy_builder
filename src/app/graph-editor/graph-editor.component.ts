@@ -120,9 +120,6 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _edgesSub: Subscription | null = null;
 
   constructor(private zone: NgZone, private graphStore: GraphStoreService) { }
-  onHamburgerOpen(): void {
-    try { console.log('[GraphEditor] hamburger menu open'); } catch (e) { /* ignore */ }
-  }
   ngOnInit(): void {
     const cyFactory = (cytoscape as any) && ((cytoscape as any).default || (cytoscape as any));
     this.cy = (cyFactory as any)({
