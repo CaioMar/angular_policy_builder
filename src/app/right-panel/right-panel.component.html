@@ -48,13 +48,20 @@
   <div *ngIf="selectedNode">
     <h4>Edit Node</h4>
     <label>Id: {{selectedNode.id}}</label>
-    <div style="margin-top:6px">
+    <div style="margin-top:6px;position:relative">
       <label>Variable</label>
-      <input [ngModel]="pendingVariable" (ngModelChange)="onVariableInputChange($event)" (keydown.enter)="commitVariable()" (blur)="commitVariable()" placeholder="variable name" style="width:100%;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
+      <input [ngModel]="pendingVariable" (ngModelChange)="onVariableInputChange($event)"
+             (keyup.enter)="commitVariable()" (blur)="commitVariable(); pendingVariableFocus=false"
+             (focus)="pendingVariableFocus=true" placeholder="variable name"
+             style="width:100%;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
+      <ul *ngIf="showVariableSuggestions() && filteredVariables.length" style="position:absolute;left:0;right:0;top:56px;background:#fff;border:1px solid #ddd;max-height:200px;overflow:auto;z-index:300;margin:4px 0 0 0;padding:0;list-style:none;border-radius:4px">
+        <li *ngFor="let v of filteredVariables" (mousedown)="selectSuggestion(v)" style="padding:8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,0.03)">{{v}}</li>
+      </ul>
+      <div *ngIf="showVariableSuggestions() && !filteredVariables.length" style="position:absolute;left:0;right:0;top:56px;background:#fff;border:1px solid #ddd;padding:8px;z-index:300;border-radius:4px;color:#666">No matches</div>
     </div>
     <div style="margin-top:8px">
       <label>Label</label>
-      <input [(ngModel)]="selectedNode.label" (ngModelChange)="applyBackground.emit();" (keydown.enter)="commitLabel(selectedNode.label)" style="width:100%;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
+      <input [(ngModel)]="selectedNode.label" (ngModelChange)="applyBackground.emit();" (keyup.enter)="commitLabel(selectedNode.label)" (blur)="commitLabel(selectedNode.label)" style="width:100%;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
     </div>
     <div>
       <label>Type</label>

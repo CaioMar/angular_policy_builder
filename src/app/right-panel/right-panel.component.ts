@@ -7,6 +7,7 @@ import { Component, EventEmitter, Input, Output, OnChanges, SimpleChanges } from
 })
 export class RightPanelComponent {
   @Input() selectedNode: any = null;
+  @Input() availableVariables: string[] = [];
   @Input() selectedEdge: any = null;
   @Input() edgeDraft: any = null;
   @Input() conflictingEdges: any[] = [];
@@ -43,6 +44,7 @@ export class RightPanelComponent {
 
   // internal temp field to hold variable input before commit
   pendingVariable = '';
+  pendingVariableFocus = false;
 
   // helpers to forward model-change events from template
   modelChangeUpdatedEdge() { this.updateSelectedEdge.emit(); }
@@ -61,4 +63,20 @@ export class RightPanelComponent {
   commitVariable() { this.updateSelectedNodeVariable.emit((this.pendingVariable || '').trim()); }
 
   commitLabel(v: string) { this.updateSelectedNodeLabel.emit((v || '').trim()); }
+
+  // suggestions filtered from availableVariables based on pendingVariable
+  get filteredVariables(): string[] {
+    const q = (this.pendingVariable || '').trim().toLowerCase();
+    if (!q) return (this.availableVariables || []).slice(0, 20);
+    return (this.availableVariables || []).filter(v => v.toLowerCase().includes(q)).slice(0, 20);
+  }
+
+  selectSuggestion(v: string) {
+    this.pendingVariable = v;
+    this.commitVariable();
+  }
+
+  showVariableSuggestions(): boolean {
+    return !!(this.pendingVariableFocus || (this.pendingVariable && this.pendingVariable.length > 0));
+  }
 }
