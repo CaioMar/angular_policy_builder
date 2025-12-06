@@ -861,6 +861,29 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     this.selectedEdge = found;
   }
 
+  // Handler for variable updates coming from RightPanelComponent
+  onRightPanelVariableUpdate(val: string): void {
+    try {
+      const name = (val || '').trim();
+      if (!name || !this.selectedNode) return;
+      const found = this.availableVariables.find(v => v.toLowerCase() === name.toLowerCase());
+      if (!found) {
+        // optionally surface an error to the user; for now ignore invalid updates
+        return;
+      }
+      try { this.graphStore.updateNode(this.selectedNode.id, { variable: found }); } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+  }
+
+  // Handler for label updates coming from RightPanelComponent
+  onRightPanelLabelUpdate(val: string): void {
+    try {
+      const label = (val || '').trim();
+      if (!this.selectedNode) return;
+      try { this.graphStore.updateNode(this.selectedNode.id, { label }); } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+  }
+
   createTempEdge(source: string, target: string): string {
     // ensure only one temporary edge exists at a time (remove previous temp edge but keep any temp node)
     try {

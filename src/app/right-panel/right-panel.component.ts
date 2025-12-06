@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, OnChanges, SimpleChanges } from '@angular/core';
 
 @Component({
   selector: 'app-right-panel',
@@ -36,7 +36,29 @@ export class RightPanelComponent {
   @Output() applyBackground = new EventEmitter<void>();
   @Output() onValueInputChange = new EventEmitter<string>();
   @Output() onVarDrag = new EventEmitter<any>();
+  // emit when the user commits a variable name for the selected node
+  @Output() updateSelectedNodeVariable = new EventEmitter<string>();
+  // emit when the user commits a label change for the selected node
+  @Output() updateSelectedNodeLabel = new EventEmitter<string>();
+
+  // internal temp field to hold variable input before commit
+  pendingVariable = '';
 
   // helpers to forward model-change events from template
   modelChangeUpdatedEdge() { this.updateSelectedEdge.emit(); }
+
+  ngOnChanges(changes: SimpleChanges) {
+    if (changes['selectedNode']) {
+      this.pendingVariable = (this.selectedNode && (this.selectedNode.variable || this.selectedNode.label)) || '';
+    }
+  }
+
+  onVariableInputChange(v: string) {
+    this.pendingVariable = v;
+    this.onValueInputChange.emit(v);
+  }
+
+  commitVariable() { this.updateSelectedNodeVariable.emit((this.pendingVariable || '').trim()); }
+
+  commitLabel(v: string) { this.updateSelectedNodeLabel.emit((v || '').trim()); }
 }

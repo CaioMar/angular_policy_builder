@@ -48,9 +48,13 @@
   <div *ngIf="selectedNode">
     <h4>Edit Node</h4>
     <label>Id: {{selectedNode.id}}</label>
-    <div>
+    <div style="margin-top:6px">
+      <label>Variable</label>
+      <input [ngModel]="pendingVariable" (ngModelChange)="onVariableInputChange($event)" (keydown.enter)="commitVariable()" (blur)="commitVariable()" placeholder="variable name" style="width:100%;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
+    </div>
+    <div style="margin-top:8px">
       <label>Label</label>
-      <input [(ngModel)]="selectedNode.label" (ngModelChange)="applyBackground.emit()" />
+      <input [(ngModel)]="selectedNode.label" (ngModelChange)="applyBackground.emit();" (keydown.enter)="commitLabel(selectedNode.label)" style="width:100%;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
     </div>
     <div>
       <label>Type</label>

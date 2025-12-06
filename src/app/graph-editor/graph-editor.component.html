@@ -83,6 +83,8 @@
         (setZoomLevel)="setZoomLevel($event)"
         (applyBackground)="applyBackground()"
         (onValueInputChange)="onValueInputChange($event)"
+        (updateSelectedNodeVariable)="onRightPanelVariableUpdate($event)"
+        (updateSelectedNodeLabel)="onRightPanelLabelUpdate($event)"
         (onVarDrag)="onVarDrag($event.event, $event.name)">
       </app-right-panel>
     </div>
