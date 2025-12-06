@@ -53,6 +53,9 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   searchModalPos = { x: 0, y: 0 };
   searchQuery = '';
   private searchModalNodeId: string | null = null;
+  // pending node coordinates when user tapped canvas but hasn't confirmed a variable yet
+  private pendingNewNodeModelPos: { x: number; y: number } | null = null;
+  private pendingNewNodeRenderedPos: { x: number; y: number } | null = null;
   // available variables for autocomplete
   availableVariables: string[] = [
     'age','income','country','employment_status','credit_score','marital_status','dependents','education_level','occupation','home_ownership','loan_amount','loan_term','interest_rate','monthly_payment','savings_balance','checking_balance','assets_total','liabilities_total','net_worth','transaction_count','last_login_days','account_age_days','overdue_payments','payment_history_score','risk_score','location_region','city','postal_code','device_type','browser','os','signup_source','referral_code','customer_tier','churn_risk','avg_session_length','purchase_count','last_purchase_days','preferred_language','currency','tax_id','company_size','industry','annual_revenue','monthly_revenue','quarterly_growth','subscription_plan','trial_ends_in_days','coupon_used','loyalty_points','has_active_support_ticket','profile_complete'
@@ -1468,7 +1471,6 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   }
 
   confirmSearchModal(): void {
-    if (!this.searchModalNodeId) { this.closeSearchModal(true); return; }
     const name = (this.searchQuery || '').trim();
     if (!name) {
       this.searchError = 'Please pick a variable name';
@@ -1480,13 +1482,27 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       this.searchError = 'No matching variable. Please choose from suggestions.';
       return;
     }
-    // update model via the GraphStoreService so the new canvas renders the label
+
     try {
-      const n = this.nodes.find(x => x.id === this.searchModalNodeId!);
-      if (n) {
-        this.graphStore.updateNode(n.id, { label: found });
+      // If we have a pending tapped position (user clicked canvas), create the node now.
+      if (this.pendingNewNodeModelPos) {
+        const id = 'n' + (this.nodeCounter++);
+        const node: NodeModel = { id, label: found, type: 'input', position: { x: this.pendingNewNodeModelPos.x, y: this.pendingNewNodeModelPos.y } } as NodeModel;
+        this.graphStore.addNode(node);
+        // select the newly-created node in the editor model so right-panel reflects it
+        this.clearSelection();
+        this.selectedNode = node;
+        this.searchModalNodeId = node.id;
+        // clear pending positions now that node exists
+        this.pendingNewNodeModelPos = null;
+        this.pendingNewNodeRenderedPos = null;
+      } else if (this.searchModalNodeId) {
+        // legacy flow: update existing node label
+        const n = this.nodes.find(x => x.id === this.searchModalNodeId!);
+        if (n) this.graphStore.updateNode(n.id, { label: found });
       }
     } catch (e) { /* ignore */ }
+
     this.searchModalVisible = false;
     this.searchModalNodeId = null;
     this.searchQuery = '';
@@ -1529,13 +1545,17 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   }
 
   closeSearchModal(cancel = true): void {
-    if (cancel && this.searchModalNodeId) {
-      // remove the created node if user cancelled
-      const id = this.searchModalNodeId;
-      this.nodes = this.nodes.filter(n => n.id !== id);
-      this.edges = this.edges.filter(e => e.source !== id && e.target !== id);
-      try { const el = this.cy.getElementById(id); if (el) this.cy.remove(el); } catch (e) { /* ignore */ }
-      this.clearSelection();
+    if (cancel) {
+      // If we already created a provisional node (legacy flow), remove it.
+      if (this.searchModalNodeId) {
+        const id = this.searchModalNodeId;
+        try { this.graphStore.removeNode(id); } catch (e) { /* ignore */ }
+        try { const el = this.cy && this.cy.getElementById ? this.cy.getElementById(id) : null; if (el) this.cy.remove(el); } catch (e) { /* ignore */ }
+        this.clearSelection();
+      }
+      // If there's a pending tapped position (we didn't create the node yet), just clear it.
+      this.pendingNewNodeModelPos = null;
+      this.pendingNewNodeRenderedPos = null;
     }
     this.searchModalVisible = false;
     this.searchModalNodeId = null;
