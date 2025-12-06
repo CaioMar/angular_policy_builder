@@ -208,6 +208,10 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
     if (!cy) return;
     this.zone.runOutsideAngular(() => {
       try {
+        // preserve current viewport (pan/zoom) to avoid jumping when we re-sync
+        let prevPan: any = null; let prevZoom: any = null;
+        try { prevPan = (typeof cy.pan === 'function') ? cy.pan() : null; } catch (e) { prevPan = null; }
+        try { prevZoom = (typeof cy.zoom === 'function') ? cy.zoom() : null; } catch (e) { prevZoom = null; }
         // remove all existing elements and re-add current model
         try { cy.elements().remove(); } catch (e) { /* ignore */ }
         // add nodes
@@ -225,14 +229,13 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
         // re-run preset layout if positions exist
         try { if (typeof cy.layout === 'function') cy.layout({ name: 'preset' }).run(); } catch (e) { /* ignore */ }
         try { if (typeof cy.resize === 'function') cy.resize(); } catch (e) { /* ignore */ }
-        // Ensure canvas zoom matches editor's zoom level after sync so a newly-created node
-        // doesn't accidentally appear oversized. Center on viewport center for stability.
+        // restore previous viewport (pan/zoom) to avoid jumps when nodes are added
         try {
-          const rect = this.cyContainer && this.cyContainer.nativeElement ? this.cyContainer.nativeElement.getBoundingClientRect() : null;
-          const center = rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 0, y: 0 };
-          if (typeof cy.zoom === 'function') {
-            try { cy.zoom({ level: Number(this.zoomLevel), position: center }); } catch (e) { try { cy.zoom(Number(this.zoomLevel)); } catch (ee) { /* ignore */ } }
-          }
+          if (prevPan && typeof cy.pan === 'function') { try { cy.pan(prevPan); } catch (e) { /* ignore */ } }
+        } catch (e) { /* ignore */ }
+        try {
+          if (prevZoom != null && typeof cy.zoom === 'function') { try { cy.zoom(prevZoom); } catch (e) { /* ignore */ } }
+          else if (typeof cy.zoom === 'function') { try { cy.zoom(Number(this.zoomLevel)); } catch (e) { /* ignore */ } }
         } catch (e) { /* ignore */ }
       } catch (e) { /* ignore */ }
     });

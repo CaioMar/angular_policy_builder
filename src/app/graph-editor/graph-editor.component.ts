@@ -1,4 +1,5 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild, NgZone } from '@angular/core';
+import { GraphEngineService } from './engine/graph-engine.service';
 import { Subscription } from 'rxjs';
 import { GraphStoreService } from './services/graph-store.service';
 import * as cytoscape from 'cytoscape';
@@ -119,7 +120,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _nodesSub: Subscription | null = null;
   private _edgesSub: Subscription | null = null;
 
-  constructor(private zone: NgZone, private graphStore: GraphStoreService) { }
+  constructor(private zone: NgZone, private graphStore: GraphStoreService, private engine: GraphEngineService) { }
   ngOnInit(): void {
     const cyFactory = (cytoscape as any) && ((cytoscape as any).default || (cytoscape as any));
     this.cy = (cyFactory as any)({
@@ -1279,12 +1280,18 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     // prevent multiple editors
     this.hideInlineEditor();
     let nodeEl: any;
-    try { nodeEl = this.cy.getElementById(nodeId); } catch (e) { return; }
-    if (!nodeEl || !nodeEl.length) return;
-    const p = nodeEl.renderedPosition();
-    const containerRect = this.cyContainer.nativeElement.getBoundingClientRect();
-    const absX = containerRect.left + (p.x || 0);
-    const absY = containerRect.top + (p.y || 0);
+    let p: any = { x: 0, y: 0 };
+    let containerEl: any = null;
+    try {
+      const cyInst = this.engine.getCy();
+      nodeEl = cyInst ? cyInst.getElementById(nodeId) : null;
+      if (!nodeEl || !nodeEl.length) return;
+      p = nodeEl.renderedPosition();
+      containerEl = cyInst.container ? cyInst.container() : this.cyContainer.nativeElement;
+      const containerRect = containerEl.getBoundingClientRect();
+      const absX = containerRect.left + (p.x || 0);
+      const absY = containerRect.top + (p.y || 0);
+    } catch (e) { return; }
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -1300,9 +1307,8 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     input.style.borderRadius = '4px';
     input.style.fontSize = '13px';
     input.style.background = 'white';
-    // position inside the cy container
-    this.cyContainer.nativeElement.appendChild(input);
-    this._inlineEditorEl = input;
+    // position inside the visible cy container
+    try { const containerElAppend = (this.engine.getCy() && typeof this.engine.getCy().container === 'function') ? this.engine.getCy().container() : this.cyContainer.nativeElement; containerElAppend.appendChild(input); this._inlineEditorEl = input; } catch (e) { return; }
     // focus
     setTimeout(() => { try { input.focus(); input.select(); } catch (e) { /* ignore */ } }, 0);
 
@@ -1332,7 +1338,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   commitInlineEdit(nodeId: string, value: string): void {
     // update model node label via store
     try { this.graphStore.updateNode(nodeId, { label: value }); } catch (e) { /* ignore */ }
-    try { const el = this.cy.getElementById(nodeId); if (el) el.data('label', value); } catch (e) { /* ignore */ }
+    try { const cyInst = this.engine.getCy(); if (cyInst) { const el = cyInst.getElementById(nodeId); if (el) el.data && el.data('label', value); } } catch (e) { /* ignore */ }
     // propagate to edge.output for any incoming edges
     try {
       this.edges.forEach(e => { if (e.target === nodeId) { this.graphStore.updateEdge(e.id, { output: value }); } });
