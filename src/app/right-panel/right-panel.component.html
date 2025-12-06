@@ -1,0 +1,145 @@
+<div class="right-pane-inner">
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+    <button (click)="addNode.emit()" style="width:100%;padding:10px 12px">Add Node</button>
+    <button (click)="deleteSelected.emit()" [disabled]="!selectedNode" style="width:100%;padding:10px 12px">Delete Node</button>
+  </div>
+
+  <div class="conflict-modal" *ngIf="conflictingEdges?.length" style="position:fixed;left:50%;top:120px;transform:translateX(-50%);background:#fff;border:1px solid #ccc;padding:12px;z-index:160;box-shadow:0 6px 20px rgba(0,0,0,0.12);width:360px;">
+    <h4 style="margin:0 0 8px 0">Conflicting Condition</h4>
+    <div style="font-size:13px;color:#333">This condition conflicts with an existing one from the same source. Choose an action:</div>
+    <ul style="margin:8px 0;padding-left:18px;font-size:13px;color:#333">
+      <li *ngFor="let e of conflictingEdges">Edge {{e.id}} → {{e.target}} : {{e.label}}</li>
+    </ul>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button (click)="replaceConflictsAndConfirm.emit()">Replace</button>
+      <button (click)="cancelConflictModal.emit()">Cancel</button>
+    </div>
+  </div>
+
+  <div *ngIf="selectedEdge" style="border:1px solid #ddd;padding:8px;margin-bottom:12px;background:#fff">
+    <h4>Edit Edge</h4>
+    <div>
+      <label>Id: {{selectedEdge.id}}</label>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label style="flex:0 0 auto;min-width:64px">Condition</label>
+      <select [(ngModel)]="selectedEdge.condition.op" *ngIf="selectedEdge.condition" style="flex:0 0 86px;padding:6px;border:1px solid #e6e6e6;border-radius:4px;background:white" (ngModelChange)="modelChangeUpdatedEdge()">
+        <option value="==">==</option>
+        <option value="!=">!=</option>
+        <option value=">">&gt;</option>
+        <option value=">=">&gt;=</option>
+        <option value="<">&lt;</option>
+        <option value="<=">&lt;=</option>
+        <option value="in">in</option>
+        <option value="contains">contains</option>
+      </select>
+      <input *ngIf="selectedEdge.condition" [(ngModel)]="selectedEdge.condition.value" placeholder="value" (ngModelChange)="modelChangeUpdatedEdge()" style="flex:1 1 180px;max-width:300px;min-width:120px;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
+    </div>
+    <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+      <label>Label</label>
+      <input [(ngModel)]="selectedEdge.label" (ngModelChange)="modelChangeUpdatedEdge()" style="width:100%;max-width:420px;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button (click)="updateSelectedEdge.emit()">Save</button>
+      <button (click)="cancelEdgeEdit.emit()">Cancel</button>
+    </div>
+  </div>
+
+  <div *ngIf="selectedNode">
+    <h4>Edit Node</h4>
+    <label>Id: {{selectedNode.id}}</label>
+    <div>
+      <label>Label</label>
+      <input [(ngModel)]="selectedNode.label" (ngModelChange)="applyBackground.emit()" />
+    </div>
+    <div>
+      <label>Type</label>
+      <select [(ngModel)]="selectedNode.type">
+        <option value="condition">condition</option>
+        <option value="action">action</option>
+        <option value="leaf">leaf</option>
+      </select>
+    </div>
+    <div *ngIf="selectedNode.type !== 'leaf'">
+      <label>Expression</label>
+      <input [(ngModel)]="selectedNode.expr" />
+    </div>
+    <div *ngIf="selectedNode.type === 'leaf'" style="margin-top:8px">
+      <label>Output value</label>
+      <input [(ngModel)]="selectedNode.label" (ngModelChange)="applyBackground.emit()" />
+    </div>
+  </div>
+
+  <div style="margin-top:12px">
+    <div *ngIf="edgeDraft" style="border:1px solid #ddd;padding:8px;margin-bottom:12px;background:#fbfbfb">
+      <h4>Create Edge</h4>
+      <div>
+        <label>From:</label> <strong>{{edgeDraft.source}} ({{edgeDraft.parentVar}})</strong>
+      </div>
+      <div>
+        <label>To:</label> <strong>{{ edgeDraft.isLeaf ? '(leaf)' : edgeDraft.target }}</strong>
+      </div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label>Condition</label>
+        <select [(ngModel)]="edgeDraft.op">
+          <option value="==">==</option>
+          <option value="!=">!=</option>
+          <option value=">">&gt;</option>
+          <option value=">=">&gt;=</option>
+          <option value="<">&lt;</option>
+          <option value="<=">&lt;=</option>
+          <option value="in">in</option>
+          <option value="contains">contains</option>
+        </select>
+        <input *ngIf="!edgeDraft.isLeaf" id="edge-condition-value" placeholder="value" [(ngModel)]="edgeDraft.value" (ngModelChange)="onValueInputChange.emit($event)" style="flex:1 1 220px;max-width:320px;min-width:120px;padding:6px;border:1px solid #e6e6e6;border-radius:4px" (keyup.enter)="confirmEdgeDraft.emit()" />
+        <input *ngIf="edgeDraft.isLeaf" id="edge-condition-value" placeholder="value" [(ngModel)]="edgeDraft.value" (ngModelChange)="onValueInputChange.emit($event)" style="flex:1 1 180px;max-width:260px;min-width:100px;padding:6px;border:1px solid #e6e6e6;border-radius:4px" (keyup.enter)="confirmEdgeDraft.emit()" />
+      </div>
+      <div *ngIf="edgeDraft.isLeaf" style="margin-top:8px">
+        <label>Output value</label>
+        <input id="edge-output-value" placeholder="output" [(ngModel)]="edgeDraft.output" style="width:100%;max-width:320px;padding:6px;border:1px solid #e6e6e6;border-radius:4px" (keyup.enter)="confirmEdgeDraft.emit()" />
+      </div>
+      <div style="margin-top:8px">
+        <button (click)="confirmEdgeDraft.emit()">Confirm</button>
+        <button (click)="cancelEdgeDraft.emit()" style="margin-left:8px">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:12px">
+    <h4>Variables</h4>
+    <div class="palette">
+      <div class="var" draggable="true" (dragstart)="onVarDrag.emit({ event: $event, name: 'age' })">age</div>
+      <div class="var" draggable="true" (dragstart)="onVarDrag.emit({ event: $event, name: 'income' })">income</div>
+      <div class="var" draggable="true" (dragstart)="onVarDrag.emit({ event: $event, name: 'country' })">country</div>
+    </div>
+    <p style="font-size:12px;color:#666">Drag a variable into the canvas to add an input node.</p>
+  </div>
+
+  <div style="margin-top:12px">
+    <div *ngIf="exportInvalidNodes?.length" style="position:fixed;left:50%;top:120px;transform:translateX(-50%);background:#fff;border:1px solid #ccc;padding:12px;z-index:170;box-shadow:0 6px 20px rgba(0,0,0,0.12);width:420px;">
+      <h4 style="margin:0 0 8px 0">Export Blocked — DAG Incomplete</h4>
+      <div style="font-size:13px;color:#333;margin-bottom:8px">Some non-leaf nodes do not lead to any leaf nodes. The graph must terminate at leaf nodes before exporting.</div>
+      <div style="font-size:13px;color:#333;margin-bottom:8px">Please finish the graph for the following nodes:</div>
+      <ul style="margin:8px 0;padding-left:18px;font-size:13px;color:#b00020">
+        <li *ngFor="let id of exportInvalidNodes">{{id}}</li>
+      </ul>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button (click)="focusFirstInvalid.emit()">Focus First</button>
+        <button (click)="closeExportInvalidModal.emit()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div *ngIf="exportDOTRoots?.length" style="position:fixed;left:50%;top:120px;transform:translateX(-50%);background:#fff;border:1px solid #ccc;padding:12px;z-index:175;box-shadow:0 6px 20px rgba(0,0,0,0.12);width:460px;">
+    <h4 style="margin:0 0 8px 0">Export Blocked — Multiple Roots</h4>
+    <div style="font-size:13px;color:#333;margin-bottom:8px">DOT export requires exactly one root (entry) node. Found <strong>{{exportDOTRoots.length}}</strong> root nodes.</div>
+    <div style="font-size:13px;color:#333;margin-bottom:8px">Please merge or remove extra roots. The following nodes are roots (no incoming edges):</div>
+    <ul style="margin:8px 0;padding-left:18px;font-size:13px;color:#b00020">
+      <li *ngFor="let id of exportDOTRoots">{{id}}</li>
+    </ul>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+      <button (click)="focusFirstRoot.emit()">Focus First Root</button>
+      <button (click)="closeExportMultipleRootsModal.emit()">Close</button>
+    </div>
+  </div>
+</div>

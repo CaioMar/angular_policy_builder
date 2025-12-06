@@ -1,6 +1,7 @@
 <div #rootContainer class="container" style="display:flex;align-items:stretch;height:auto;gap:0;box-sizing:border-box;">
   <div class="left-pane" style="flex:1;min-width:0;padding-right:12px">
     <div class="controls">
+      <app-hamburger-menu (open)="onHamburgerOpen()"></app-hamburger-menu>
       <div id="cy" #cyContainer (drop)="onDrop($event)" (dragover)="onDragOver($event)"></div>
       <!-- SVG overlay: fallback visible line drawn on top during drag (pointer-events:none) -->
       <svg class="edge-overlay" [style.display]="isEdgeDragging ? 'block' : 'none'">
@@ -39,193 +40,53 @@
       </div>
     </div>
 
-    <div class="meta-resizer" (mousedown)="startMetaResizerDrag($event)" title="Drag to resize metadata"></div>
-
-    <!-- Metadata / details below the canvas -->
-    <div class="metadata" [style.height.px]="metadataHeight" style="margin-top:12px;border-top:1px solid #eee;padding-top:8px;overflow:auto;">
-      <div *ngIf="selectedNode">
-        <div class="meta-title" style="font-size:15px;font-weight:600;padding-bottom:6px">Node</div>
-        <div style="font-size:13px;color:#333;margin-top:6px">Id: {{selectedNode.id}}</div>
-        <div style="font-size:13px;color:#333">Label: {{selectedNode.label}}</div>
-        <div style="font-size:13px;color:#333">Type: {{selectedNode.type}}</div>
-        <div *ngIf="selectedNode.type !== 'leaf'" style="font-size:13px;color:#333">Expr: {{selectedNode.expr}}</div>
-        <div *ngIf="selectedNode.type === 'leaf'" style="font-size:13px;color:#333">Output: {{selectedNode.label}}</div>
-      </div>
-      <div *ngIf="selectedEdge" style="margin-top:6px">
-        <div class="meta-title" style="font-size:15px;font-weight:600;padding-bottom:6px">Edge</div>
-        <div style="font-size:13px;color:#333;margin-top:6px">Id: {{selectedEdge.id}}</div>
-        <div style="font-size:13px;color:#333">From: {{selectedEdge.source}} → To: {{selectedEdge.target}}</div>
-        <div style="font-size:13px;color:#333">Label: {{selectedEdge.label}}</div>
-        <div *ngIf="selectedEdge.condition" style="font-size:13px;color:#333">Condition: {{selectedEdge.condition.op}} {{selectedEdge.condition.value}}</div>
-      </div>
-      <div *ngIf="!selectedNode && !selectedEdge && lastSelectionSnapshot" style="font-size:13px;color:#333">
-        <div *ngIf="lastSelectionSnapshot.kind === 'node'" class="meta-title last-selected" style="font-size:15px;font-weight:700;padding-bottom:6px">Node</div>
-        <div *ngIf="lastSelectionSnapshot.kind === 'edge'" class="meta-title last-selected" style="font-size:15px;font-weight:700;padding-bottom:6px">Edge</div>
-        <div *ngIf="lastSelectionSnapshot.kind === 'node'">Id: {{lastSelectionSnapshot.data.id}}</div>
-        <div *ngIf="lastSelectionSnapshot.kind === 'node'">Label: {{lastSelectionSnapshot.data.label}}</div>
-        <div *ngIf="lastSelectionSnapshot.kind === 'node'">Type: {{lastSelectionSnapshot.data.type}}</div>
-        <div *ngIf="lastSelectionSnapshot.kind === 'node' && lastSelectionSnapshot.data.type !== 'leaf'">Expr: {{lastSelectionSnapshot.data.expr}}</div>
-        <div *ngIf="lastSelectionSnapshot.kind === 'edge'">Id: {{lastSelectionSnapshot.data.id}}</div>
-        <div *ngIf="lastSelectionSnapshot.kind === 'edge'">From: {{lastSelectionSnapshot.data.source}} → To: {{lastSelectionSnapshot.data.target}}</div>
-        <div *ngIf="lastSelectionSnapshot.kind === 'edge'">Label: {{lastSelectionSnapshot.data.label}}</div>
-      </div>
-      <div *ngIf="!selectedNode && !selectedEdge && !lastSelectionSnapshot" style="font-size:13px;color:#666">Click a node or an edge to see metadata here.</div>
-    </div>
+    <app-metadata-panel
+      [selectedNode]="selectedNode"
+      [selectedEdge]="selectedEdge"
+      [lastSelectionSnapshot]="lastSelectionSnapshot"
+      [metadataHeight]="metadataHeight"
+      (startMetaResizerDrag)="startMetaResizerDrag($event)">
+    </app-metadata-panel>
   </div>
 
   <!-- resizer between panes -->
   <div class="resizer" (mousedown)="startResizerDrag($event)" style="flex:0 0 8px;cursor:col-resize;background:transparent;user-select:none"></div>
 
-  <div class="right-pane" [style.width.px]="rightPaneWidth" style="flex:0 0 auto;min-width:220px;max-width:720px;overflow:auto;padding-left:12px">
-    <!-- toolbar moved into panel -->
-    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-      <button (click)="addNode()" style="width:100%;padding:10px 12px">Add Node</button>
-      <button (click)="deleteSelected()" [disabled]="!selectedNode" style="width:100%;padding:10px 12px">Delete Node</button>
+    <div class="right-pane" [style.width.px]="rightPaneWidth" style="flex:0 0 auto;min-width:220px;max-width:720px;overflow:auto;padding-left:12px">
+      <app-right-panel
+        [selectedNode]="selectedNode"
+        [selectedEdge]="selectedEdge"
+        [edgeDraft]="edgeDraft"
+        [conflictingEdges]="conflictingEdges"
+        [exportInvalidNodes]="exportInvalidNodes"
+        [exportDOTRoots]="exportDOTRoots"
+        [canvasSettingsVisible]="canvasSettingsVisible"
+        [bgPattern]="bgPattern"
+        [bgColor]="bgColor"
+        [zoomLevel]="zoomLevel"
+        (addNode)="addNode()"
+        (deleteSelected)="deleteSelected()"
+        (updateSelectedEdge)="updateSelectedEdge()"
+        (cancelEdgeEdit)="cancelEdgeEdit()"
+        (confirmEdgeDraft)="confirmEdgeDraft()"
+        (cancelEdgeDraft)="cancelEdgeDraft()"
+        (replaceConflictsAndConfirm)="replaceConflictsAndConfirm()"
+        (cancelConflictModal)="cancelConflictModal()"
+        (requestExportJSON)="requestExportJSON()"
+        (requestExportDOT)="requestExportDOT()"
+        (focusFirstInvalid)="focusFirstInvalid()"
+        (closeExportInvalidModal)="closeExportInvalidModal()"
+        (focusFirstRoot)="focusFirstRoot()"
+        (closeExportMultipleRootsModal)="closeExportMultipleRootsModal()"
+        (toggleCanvasSettings)="toggleCanvasSettings($event)"
+        (setZoomLevel)="setZoomLevel($event)"
+        (applyBackground)="applyBackground()"
+        (onValueInputChange)="onValueInputChange($event)"
+        (onVarDrag)="onVarDrag($event.event, $event.name)">
+      </app-right-panel>
     </div>
-    <!-- Conflict modal -->
-    <div class="conflict-modal" *ngIf="conflictModalVisible" style="position:fixed;left:50%;top:120px;transform:translateX(-50%);background:#fff;border:1px solid #ccc;padding:12px;z-index:160;box-shadow:0 6px 20px rgba(0,0,0,0.12);width:360px;">
-      <h4 style="margin:0 0 8px 0">Conflicting Condition</h4>
-      <div style="font-size:13px;color:#333">This condition conflicts with an existing one from the same source. Choose an action:</div>
-      <ul style="margin:8px 0;padding-left:18px;font-size:13px;color:#333">
-        <li *ngFor="let e of conflictingEdges">Edge {{e.id}} → {{e.target}} : {{e.label}}</li>
-      </ul>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-        <button (click)="replaceConflictsAndConfirm()">Replace</button>
-        <button (click)="cancelConflictModal()">Cancel</button>
-      </div>
-    </div>
-
-    <div *ngIf="selectedEdge" style="border:1px solid #ddd;padding:8px;margin-bottom:12px;background:#fff">
-      <h4>Edit Edge</h4>
-      <div>
-        <label>Id: {{selectedEdge.id}}</label>
-      </div>
-      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <label style="flex:0 0 auto;min-width:64px">Condition</label>
-        <select [(ngModel)]="selectedEdge.condition.op" *ngIf="selectedEdge.condition" style="flex:0 0 86px;padding:6px;border:1px solid #e6e6e6;border-radius:4px;background:white">
-          <option value="==">==</option>
-          <option value="!=">!=</option>
-          <option value=">">&gt;</option>
-          <option value=">=">&gt;=</option>
-          <option value="<">&lt;</option>
-          <option value="<=">&lt;=</option>
-          <option value="in">in</option>
-          <option value="contains">contains</option>
-        </select>
-        <input *ngIf="selectedEdge.condition" [(ngModel)]="selectedEdge.condition.value" placeholder="value" style="flex:1 1 180px;max-width:300px;min-width:120px;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
-      </div>
-      <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
-        <label>Label</label>
-        <input [(ngModel)]="selectedEdge.label" style="width:100%;max-width:420px;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-        <button (click)="updateSelectedEdge()">Save</button>
-        <button (click)="cancelEdgeEdit()">Cancel</button>
-      </div>
-    </div>
-
-    <div *ngIf="selectedNode">
-      <h4>Edit Node</h4>
-      <label>Id: {{selectedNode.id}}</label>
-      <div>
-        <label>Label</label>
-        <input [(ngModel)]="selectedNode.label" (ngModelChange)="updateSelectedNode()" />
-      </div>
-      <div>
-        <label>Type</label>
-        <select [(ngModel)]="selectedNode.type">
-          <option value="condition">condition</option>
-          <option value="action">action</option>
-          <option value="leaf">leaf</option>
-        </select>
-      </div>
-      <div *ngIf="selectedNode.type !== 'leaf'">
-        <label>Expression</label>
-        <input [(ngModel)]="selectedNode.expr" />
-      </div>
-      <div *ngIf="selectedNode.type === 'leaf'" style="margin-top:8px">
-        <label>Output value</label>
-        <input [(ngModel)]="selectedNode.label" (ngModelChange)="updateSelectedNode()" />
-      </div>
-    </div>
-
-    <div style="margin-top:12px">
-          <div *ngIf="edgeDraft" style="border:1px solid #ddd;padding:8px;margin-bottom:12px;background:#fbfbfb">
-        <h4>Create Edge</h4>
-        <div>
-          <label>From:</label> <strong>{{edgeDraft.source}} ({{edgeDraft.parentVar}})</strong>
-        </div>
-        <div>
-          <label>To:</label> <strong>{{ edgeDraft.isLeaf ? '(leaf)' : edgeDraft.target }}</strong>
-        </div>
-        <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <label>Condition</label>
-          <select [(ngModel)]="edgeDraft.op">
-            <option value="==">==</option>
-            <option value="!=">!=</option>
-            <option value=">">&gt;</option>
-            <option value=">=">&gt;=</option>
-            <option value="<">&lt;</option>
-            <option value="<=">&lt;=</option>
-            <option value="in">in</option>
-            <option value="contains">contains</option>
-          </select>
-          <input *ngIf="!edgeDraft.isLeaf" id="edge-condition-value" placeholder="value" [(ngModel)]="edgeDraft.value" (ngModelChange)="onValueInputChange($event)" style="flex:1 1 220px;max-width:320px;min-width:120px;padding:6px;border:1px solid #e6e6e6;border-radius:4px" (keyup.enter)="confirmEdgeDraft()" />
-          <input *ngIf="edgeDraft.isLeaf" id="edge-condition-value" placeholder="value" [(ngModel)]="edgeDraft.value" (ngModelChange)="onValueInputChange($event)" style="flex:1 1 180px;max-width:260px;min-width:100px;padding:6px;border:1px solid #e6e6e6;border-radius:4px" (keyup.enter)="confirmEdgeDraft()" />
-        </div>
-        <div *ngIf="edgeDraftParseError" style="color:#b00020;font-size:12px;margin-top:6px">{{edgeDraftParseError}}</div>
-        <div *ngIf="edgeDraft.isLeaf" style="margin-top:8px">
-          <label>Output value</label>
-          <input id="edge-output-value" placeholder="output" [(ngModel)]="edgeDraft.output" style="width:100%;max-width:320px;padding:6px;border:1px solid #e6e6e6;border-radius:4px" (keyup.enter)="confirmEdgeDraft()" />
-        </div>
-        <div style="margin-top:8px">
-          <button (click)="confirmEdgeDraft()">Confirm</button>
-          <button (click)="cancelEdgeDraft()" style="margin-left:8px">Cancel</button>
-        </div>
-      </div>
-      
-    </div>
-  
-    <div style="margin-top:12px">
-      <h4>Variables</h4>
-      <div class="palette">
-        <div class="var" draggable="true" (dragstart)="onVarDrag($event, 'age')">age</div>
-        <div class="var" draggable="true" (dragstart)="onVarDrag($event, 'income')">income</div>
-        <div class="var" draggable="true" (dragstart)="onVarDrag($event, 'country')">country</div>
-      </div>
-      <p style="font-size:12px;color:#666">Drag a variable into the canvas to add an input node.</p>
-    </div>
-  </div>
 </div>
 
-<!-- Export invalid modal -->
-<div *ngIf="exportInvalidModalVisible" style="position:fixed;left:50%;top:120px;transform:translateX(-50%);background:#fff;border:1px solid #ccc;padding:12px;z-index:170;box-shadow:0 6px 20px rgba(0,0,0,0.12);width:420px;">
-  <h4 style="margin:0 0 8px 0">Export Blocked — DAG Incomplete</h4>
-  <div style="font-size:13px;color:#333;margin-bottom:8px">Some non-leaf nodes do not lead to any leaf nodes. The graph must terminate at leaf nodes before exporting.</div>
-  <div style="font-size:13px;color:#333;margin-bottom:8px">Please finish the graph for the following nodes:</div>
-  <ul style="margin:8px 0;padding-left:18px;font-size:13px;color:#b00020">
-    <li *ngFor="let id of exportInvalidNodes">{{id}}</li>
-  </ul>
-  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-    <button (click)="focusFirstInvalid()">Focus First</button>
-    <button (click)="closeExportInvalidModal()">Close</button>
-  </div>
-</div>
-
-<!-- DOT roots modal -->
-<div *ngIf="exportMultipleRootsModalVisible" style="position:fixed;left:50%;top:120px;transform:translateX(-50%);background:#fff;border:1px solid #ccc;padding:12px;z-index:175;box-shadow:0 6px 20px rgba(0,0,0,0.12);width:460px;">
-  <h4 style="margin:0 0 8px 0">Export Blocked — Multiple Roots</h4>
-  <div style="font-size:13px;color:#333;margin-bottom:8px">DOT export requires exactly one root (entry) node. Found <strong>{{exportDOTRoots.length}}</strong> root nodes.</div>
-  <div style="font-size:13px;color:#333;margin-bottom:8px">Please merge or remove extra roots. The following nodes are roots (no incoming edges):</div>
-  <ul style="margin:8px 0;padding-left:18px;font-size:13px;color:#b00020">
-    <li *ngFor="let id of exportDOTRoots">{{id}}</li>
-  </ul>
-  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
-    <button (click)="focusFirstRoot()">Focus First Root</button>
-    <button (click)="closeExportMultipleRootsModal()">Close</button>
-  </div>
-</div>
-  
 <!-- Search modal: create variable name after clicking canvas -->
 <div *ngIf="searchModalVisible" style="position:fixed;left:0;top:0;right:0;bottom:0;z-index:179"> 
   <div class="modal-overlay" (click)="closeSearchModal(true)" style="position:fixed;left:0;top:0;right:0;bottom:0;background:transparent"></div>

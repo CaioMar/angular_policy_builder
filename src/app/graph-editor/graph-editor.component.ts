@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, OnInit, ViewChild, NgZone, AfterViewInit } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild, NgZone } from '@angular/core';
 import * as cytoscape from 'cytoscape';
 
 interface NodeModel {
@@ -129,6 +129,9 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _resizeWindowHandler: any = null;
 
   constructor(private zone: NgZone) { }
+  onHamburgerOpen(): void {
+    try { console.log('[GraphEditor] hamburger menu open'); } catch (e) { /* ignore */ }
+  }
   ngOnInit(): void {
     const cyFactory = (cytoscape as any) && ((cytoscape as any).default || (cytoscape as any));
     this.cy = (cyFactory as any)({

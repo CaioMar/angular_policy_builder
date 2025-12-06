@@ -1,0 +1,32 @@
+<div class="meta-resizer" (mousedown)="startMetaResizerDrag.emit($event)" title="Drag to resize metadata"></div>
+
+<!-- Metadata / details below the canvas -->
+<div class="metadata" [style.height.px]="metadataHeight" style="margin-top:12px;border-top:1px solid #eee;padding-top:8px;overflow:auto;">
+  <div *ngIf="selectedNode">
+    <div class="meta-title" style="font-size:15px;font-weight:600;padding-bottom:6px">Node</div>
+    <div style="font-size:13px;color:#333;margin-top:6px">Id: {{selectedNode.id}}</div>
+    <div style="font-size:13px;color:#333">Label: {{selectedNode.label}}</div>
+    <div style="font-size:13px;color:#333">Type: {{selectedNode.type}}</div>
+    <div *ngIf="selectedNode.type !== 'leaf'" style="font-size:13px;color:#333">Expr: {{selectedNode.expr}}</div>
+    <div *ngIf="selectedNode.type === 'leaf'" style="font-size:13px;color:#333">Output: {{selectedNode.label}}</div>
+  </div>
+  <div *ngIf="selectedEdge" style="margin-top:6px">
+    <div class="meta-title" style="font-size:15px;font-weight:600;padding-bottom:6px">Edge</div>
+    <div style="font-size:13px;color:#333;margin-top:6px">Id: {{selectedEdge.id}}</div>
+    <div style="font-size:13px;color:#333">From: {{selectedEdge.source}} → To: {{selectedEdge.target}}</div>
+    <div style="font-size:13px;color:#333">Label: {{selectedEdge.label}}</div>
+    <div *ngIf="selectedEdge.condition" style="font-size:13px;color:#333">Condition: {{selectedEdge.condition.op}} {{selectedEdge.condition.value}}</div>
+  </div>
+  <div *ngIf="!selectedNode && !selectedEdge && lastSelectionSnapshot" style="font-size:13px;color:#333">
+    <div *ngIf="lastSelectionSnapshot.kind === 'node'" class="meta-title last-selected" style="font-size:15px;font-weight:700;padding-bottom:6px">Node</div>
+    <div *ngIf="lastSelectionSnapshot.kind === 'edge'" class="meta-title last-selected" style="font-size:15px;font-weight:700;padding-bottom:6px">Edge</div>
+    <div *ngIf="lastSelectionSnapshot.kind === 'node'">Id: {{lastSelectionSnapshot.data.id}}</div>
+    <div *ngIf="lastSelectionSnapshot.kind === 'node'">Label: {{lastSelectionSnapshot.data.label}}</div>
+    <div *ngIf="lastSelectionSnapshot.kind === 'node'">Type: {{lastSelectionSnapshot.data.type}}</div>
+    <div *ngIf="lastSelectionSnapshot.kind === 'node' && lastSelectionSnapshot.data.type !== 'leaf'">Expr: {{lastSelectionSnapshot.data.expr}}</div>
+    <div *ngIf="lastSelectionSnapshot.kind === 'edge'">Id: {{lastSelectionSnapshot.data.id}}</div>
+    <div *ngIf="lastSelectionSnapshot.kind === 'edge'">From: {{lastSelectionSnapshot.data.source}} → To: {{lastSelectionSnapshot.data.target}}</div>
+    <div *ngIf="lastSelectionSnapshot.kind === 'edge'">Label: {{lastSelectionSnapshot.data.label}}</div>
+  </div>
+  <div *ngIf="!selectedNode && !selectedEdge && !lastSelectionSnapshot" style="font-size:13px;color:#666">Click a node or an edge to see metadata here.</div>
+</div>
