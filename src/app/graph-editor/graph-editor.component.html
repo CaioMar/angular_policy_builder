@@ -1,7 +1,9 @@
 <div #rootContainer class="container" style="display:flex;align-items:stretch;height:auto;gap:0;box-sizing:border-box;">
   <div class="left-pane" style="flex:1;min-width:0;padding-right:12px">
     <div class="controls">
-      <div id="cy" #cyContainer (drop)="onDrop($event)" (dragover)="onDragOver($event)"></div>
+      <div id="cy" #cyContainer (drop)="onDrop($event)" (dragover)="onDragOver($event)" style="display:none" aria-hidden="true"></div>
+      <!-- New migrating canvas overlay: captures node taps/double-taps and emits events to the editor -->
+      <app-graph-canvas style="position:absolute;left:0;top:0;right:0;bottom:0;z-index:180" [bgPattern]="bgPattern" [bgColor]="bgColor" [zoomLevel]="zoomLevel" [zoomSensitivity]="zoomSensitivity" (nodeClicked)="onCanvasNodeClicked($event)" (nodeDoubleClicked)="onCanvasNodeDoubleClicked($event)" (canvasTapped)="onCanvasTapped($event)"></app-graph-canvas>
       <!-- SVG overlay: fallback visible line drawn on top during drag (pointer-events:none) -->
       <svg class="edge-overlay" [style.display]="isEdgeDragging ? 'block' : 'none'">
         <defs>
@@ -87,7 +89,7 @@
 </div>
 
 <!-- Search modal: create variable name after clicking canvas -->
-<div *ngIf="searchModalVisible" style="position:fixed;left:0;top:0;right:0;bottom:0;z-index:179"> 
+<div *ngIf="searchModalVisible" style="position:fixed;left:0;top:0;right:0;bottom:0;z-index:5000"> 
   <div class="modal-overlay" (click)="closeSearchModal(true)" style="position:fixed;left:0;top:0;right:0;bottom:0;background:transparent"></div>
   <!-- attach drag start to the modal container so users can drag from any non-interactive area -->
   <div [ngStyle]="getSearchModalStyle()" (click)="$event.stopPropagation()" (mousedown)="startModalDrag($event)">

@@ -753,6 +753,47 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     try { this.lastSelectionSnapshot = { kind: 'node', data: Object.assign({}, found) }; } catch (e) { this.lastSelectionSnapshot = null; }
   }
 
+  // Handler for node clicks emitted from the migrating GraphCanvasComponent
+  onCanvasNodeClicked(payload: { id: string } | any): void {
+    try { const id = payload && payload.id ? payload.id : payload; if (id) this.selectNodeById(id); } catch (e) { /* ignore */ }
+  }
+
+  // Handler for node double-clicks emitted from the migrating GraphCanvasComponent
+  onCanvasNodeDoubleClicked(payload: { id: string, type?: string } | any): void {
+    try {
+      const id = payload && payload.id ? payload.id : payload;
+      const type = payload && payload.type ? payload.type : null;
+      if (!id) return;
+      // if it's a leaf node, start inline edit like original behavior
+      if (type === 'leaf') { this.startInlineEdit(id); return; }
+      // otherwise fall back to normal selection
+      this.selectNodeById(id);
+    } catch (e) { /* ignore */ }
+  }
+
+  // Handler for empty-canvas taps emitted by GraphCanvasComponent
+  onCanvasTapped(pos: { x: number; y: number } | any): void {
+    try {
+      const p = pos || { x: 100, y: 100 };
+      const id = 'n' + (this.nodeCounter++);
+      const modelPos = this.renderedToModel({ x: p.x, y: p.y });
+      const node: NodeModel = { id, label: id, type: 'input', position: { x: modelPos.x, y: modelPos.y } } as NodeModel;
+      // add to store (GraphCanvas will sync and render the node)
+      this.graphStore.addNode(node);
+      // select and open search modal like original behavior
+      this.clearSelection();
+      this.selectedNode = node;
+      try { const el = this.cy && this.cy.getElementById ? this.cy.getElementById(node.id) : null; if (el) { try { if (el.select) el.select(); } catch (e) { } try { el.addClass && el.addClass('selected'); } catch (ee) { } } } catch (e) { /* ignore */ }
+      const rect = this.cyContainer.nativeElement.getBoundingClientRect();
+      this.searchModalPos = { x: p.x, y: p.y };
+      this.searchModalVisible = true;
+      this.searchModalNodeId = node.id;
+      this.searchQuery = '';
+      this.searchModalPlacement = 'anchor';
+      setTimeout(() => this.focusSearchInput(), 0);
+    } catch (e) { /* ignore */ }
+  }
+
   clearSelection(): void {
     this.selectedNode = null;
     this.selectedEdge = null;
