@@ -15,7 +15,7 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
   @Output() nodeClicked = new EventEmitter<NodeModel>();
   @Output() nodeDoubleClicked = new EventEmitter<NodeModel>();
   @Output() canvasReady = new EventEmitter<void>();
-  @Output() canvasTapped = new EventEmitter<{ x: number; y: number }>();
+  @Output() canvasTapped = new EventEmitter<any>();
 
   @Input() nodes: NodeModel[] = [];
   @Input() edges: EdgeModel[] = [];
@@ -56,11 +56,20 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
       });
         this.engine.on('tap', null, (evt: any) => {
           try {
-            // if tap on core/canvas (not on a node/edge), emit canvasTapped with position
+            // if tap on core/canvas (not on a node/edge), emit canvasTapped with both rendered and model positions
             const cyInst = this.engine.getCy();
             if (evt && evt.target && cyInst && evt.target === cyInst) {
-              const pos = evt.position || evt.renderedPosition || { x: 0, y: 0 };
-              this.zone.run(() => this.canvasTapped.emit({ x: pos.x, y: pos.y }));
+              const rendered = evt.renderedPosition || { x: 0, y: 0 };
+              // prefer evt.position (model coords) if present; otherwise compute from rendered using pan/zoom
+              let model = evt.position;
+              try {
+                if (!model) {
+                  const pan = (cyInst && typeof cyInst.pan === 'function') ? cyInst.pan() : { x: 0, y: 0 };
+                  const zoom = (cyInst && typeof cyInst.zoom === 'function') ? cyInst.zoom() : 1;
+                  model = { x: (rendered.x - pan.x) / zoom, y: (rendered.y - pan.y) / zoom };
+                }
+              } catch (e) { model = { x: rendered.x, y: rendered.y }; }
+              this.zone.run(() => this.canvasTapped.emit({ rendered: rendered, model: model }));
             }
           } catch (e) { /* ignore */ }
         });

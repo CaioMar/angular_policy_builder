@@ -772,11 +772,11 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   }
 
   // Handler for empty-canvas taps emitted by GraphCanvasComponent
-  onCanvasTapped(pos: { x: number; y: number } | any): void {
+  onCanvasTapped(pos: { rendered?: any; model?: any } | any): void {
     try {
-      const p = pos || { x: 100, y: 100 };
+      const payload = pos || {};
       const id = 'n' + (this.nodeCounter++);
-      const modelPos = this.renderedToModel({ x: p.x, y: p.y });
+      const modelPos = payload.model || { x: 100, y: 100 };
       const node: NodeModel = { id, label: id, type: 'input', position: { x: modelPos.x, y: modelPos.y } } as NodeModel;
       // add to store (GraphCanvas will sync and render the node)
       this.graphStore.addNode(node);
@@ -785,7 +785,8 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       // will be kept in the model; we keep a model-level selectedNode for right-panel.
       this.clearSelection();
       this.selectedNode = node;
-      this.searchModalPos = { x: p.x, y: p.y };
+      const rp = payload.rendered || { x: 100, y: 100 };
+      this.searchModalPos = { x: rp.x, y: rp.y };
       this.searchModalVisible = true;
       this.searchModalNodeId = node.id;
       this.searchQuery = '';
@@ -1473,12 +1474,13 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       this.searchError = 'No matching variable. Please choose from suggestions.';
       return;
     }
-    // update model and cy element
-    const n = this.nodes.find(x => x.id === this.searchModalNodeId!);
-    if (n) {
-      n.label = found;
-      try { const el = this.cy.getElementById(n.id); if (el) el.data('label', n.label); } catch (e) { /* ignore */ }
-    }
+    // update model via the GraphStoreService so the new canvas renders the label
+    try {
+      const n = this.nodes.find(x => x.id === this.searchModalNodeId!);
+      if (n) {
+        this.graphStore.updateNode(n.id, { label: found });
+      }
+    } catch (e) { /* ignore */ }
     this.searchModalVisible = false;
     this.searchModalNodeId = null;
     this.searchQuery = '';
