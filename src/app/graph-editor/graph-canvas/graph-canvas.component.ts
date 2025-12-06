@@ -88,10 +88,11 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
           if (!cyInst) return;
           const current = (typeof cyInst.zoom === 'function') ? cyInst.zoom() : 1;
           const delta = ev.deltaY || (ev as any).wheelDelta || 0;
-          // smoother exponential zoom change
-          const factor = Math.exp(-delta * (this.zoomSensitivity || 0.001));
-          const next = Math.max(0.2, Math.min(3, current * factor));
-          try { cyInst.zoom({ level: next }); } catch (e) { try { cyInst.zoom(next); } catch (ee) { /* ignore */ } }
+          // use slider-like incremental zoom steps so wheel feels like the gear slider
+          const deltaNorm = (delta || 0) / 100; // normalize typical wheel delta
+          const step = 0.05; // each wheel notch moves ~5%
+          const next = Math.max(0.2, Math.min(3, Number(this.zoomLevel) - deltaNorm * step));
+          try { cyInst.zoom({ level: next, position: { x: (ev as any).offsetX || 0, y: (ev as any).offsetY || 0 } }); } catch (e) { try { cyInst.zoom(next); } catch (ee) { /* ignore */ } }
           // sync local input so slider reflects new zoom
           this.zone.run(() => this.zoomLevel = next);
         } catch (e) { /* ignore */ }
@@ -224,6 +225,15 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
         // re-run preset layout if positions exist
         try { if (typeof cy.layout === 'function') cy.layout({ name: 'preset' }).run(); } catch (e) { /* ignore */ }
         try { if (typeof cy.resize === 'function') cy.resize(); } catch (e) { /* ignore */ }
+        // Ensure canvas zoom matches editor's zoom level after sync so a newly-created node
+        // doesn't accidentally appear oversized. Center on viewport center for stability.
+        try {
+          const rect = this.cyContainer && this.cyContainer.nativeElement ? this.cyContainer.nativeElement.getBoundingClientRect() : null;
+          const center = rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 0, y: 0 };
+          if (typeof cy.zoom === 'function') {
+            try { cy.zoom({ level: Number(this.zoomLevel), position: center }); } catch (e) { try { cy.zoom(Number(this.zoomLevel)); } catch (ee) { /* ignore */ } }
+          }
+        } catch (e) { /* ignore */ }
       } catch (e) { /* ignore */ }
     });
   }
