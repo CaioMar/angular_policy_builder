@@ -780,11 +780,11 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       const node: NodeModel = { id, label: id, type: 'input', position: { x: modelPos.x, y: modelPos.y } } as NodeModel;
       // add to store (GraphCanvas will sync and render the node)
       this.graphStore.addNode(node);
-      // select and open search modal like original behavior
+      // open search modal similar to original behavior but do not attempt to select using the
+      // old/hidden cytoscape instance. The new GraphCanvas will render and selection
+      // will be kept in the model; we keep a model-level selectedNode for right-panel.
       this.clearSelection();
       this.selectedNode = node;
-      try { const el = this.cy && this.cy.getElementById ? this.cy.getElementById(node.id) : null; if (el) { try { if (el.select) el.select(); } catch (e) { } try { el.addClass && el.addClass('selected'); } catch (ee) { } } } catch (e) { /* ignore */ }
-      const rect = this.cyContainer.nativeElement.getBoundingClientRect();
       this.searchModalPos = { x: p.x, y: p.y };
       this.searchModalVisible = true;
       this.searchModalNodeId = node.id;

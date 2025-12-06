@@ -22,7 +22,11 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
   @Input() bgPattern: 'plain' | 'dots' | 'grid' = 'dots';
   @Input() bgColor = '#ffffff';
   @Input() zoomLevel: number = 1.0;
-  @Input() zoomSensitivity: number = 0.004;
+  @Input() zoomSensitivity: number = 0.001;
+  private _isRightPanning = false;
+  private _panLast = { x: 0, y: 0 };
+  private _panMoveHandler: any = null;
+  private _panUpHandler: any = null;
 
   private _nodesSub: Subscription | null = null;
   private _edgesSub: Subscription | null = null;
@@ -66,7 +70,7 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
     // apply background initially
     setTimeout(() => this.applyBackground(), 0);
 
-    // add wheel handler to support zooming via mouse wheel inside the visible canvas
+      // add wheel handler to support zooming via mouse wheel inside the visible canvas
     try {
       this._wheelHandler = (ev: WheelEvent) => {
         try {
@@ -75,7 +79,8 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
           if (!cyInst) return;
           const current = (typeof cyInst.zoom === 'function') ? cyInst.zoom() : 1;
           const delta = ev.deltaY || (ev as any).wheelDelta || 0;
-          const factor = 1 - (delta * (this.zoomSensitivity || 0.004));
+          // smoother exponential zoom change
+          const factor = Math.exp(-delta * (this.zoomSensitivity || 0.001));
           const next = Math.max(0.2, Math.min(3, current * factor));
           try { cyInst.zoom({ level: next }); } catch (e) { try { cyInst.zoom(next); } catch (ee) { /* ignore */ } }
           // sync local input so slider reflects new zoom
@@ -83,6 +88,36 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
         } catch (e) { /* ignore */ }
       };
       try { this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.addEventListener('wheel', this._wheelHandler, { passive: false }); } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
+
+    // apply initial zoom level
+    try { const cyInst = this.engine.getCy(); if (cyInst && typeof cyInst.zoom === 'function') { try { cyInst.zoom({ level: Number(this.zoomLevel) }); } catch (e) { try { cyInst.zoom(this.zoomLevel); } catch (ee) { /* ignore */ } } } } catch (e) { /* ignore */ }
+
+    // right-button panning: attach mousedown on container
+    try {
+      const downHandler = (ev: MouseEvent) => {
+        if (ev.button !== 2) return;
+        ev.preventDefault();
+        this._isRightPanning = true;
+        this._panLast = { x: ev.clientX, y: ev.clientY };
+        this._panMoveHandler = (m: MouseEvent) => {
+          try {
+            if (!this._isRightPanning) return;
+            const dx = m.clientX - this._panLast.x;
+            const dy = m.clientY - this._panLast.y;
+            this._panLast = { x: m.clientX, y: m.clientY };
+            const cyInst = this.engine.getCy();
+            if (cyInst && typeof cyInst.panBy === 'function') {
+              try { cyInst.panBy({ x: dx, y: dy }); } catch (e) { /* ignore */ }
+            }
+          } catch (e) { /* ignore */ }
+        };
+        this._panUpHandler = (u: MouseEvent) => { try { this._isRightPanning = false; window.removeEventListener('mousemove', this._panMoveHandler); window.removeEventListener('mouseup', this._panUpHandler); } catch (e) { /* ignore */ } };
+        window.addEventListener('mousemove', this._panMoveHandler);
+        window.addEventListener('mouseup', this._panUpHandler);
+      };
+      try { this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.addEventListener('mousedown', downHandler); } catch (e) { /* ignore */ }
+      try { this.cyContainer && this.cyContainer.nativeElement && this.cyContainer.nativeElement.addEventListener('contextmenu', (e:any) => e.preventDefault()); } catch (e) { /* ignore */ }
     } catch (e) { /* ignore */ }
 
     // subscribe to store and keep canvas in sync (safe incremental migration)
