@@ -77,6 +77,7 @@ export class RightPanelComponent {
   }
 
   showVariableSuggestions(): boolean {
-    return !!(this.pendingVariableFocus || (this.pendingVariable && this.pendingVariable.length > 0));
+    // show suggestions only when the variable input is focused
+    return !!this.pendingVariableFocus;
   }
 }
