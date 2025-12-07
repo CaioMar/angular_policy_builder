@@ -1,4 +1,5 @@
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild, NgZone } from '@angular/core';
+import { GraphCanvasComponent } from './graph-canvas/graph-canvas.component';
 import { GraphEngineService } from './engine/graph-engine.service';
 import { Subscription } from 'rxjs';
 import { GraphStoreService } from './services/graph-store.service';
@@ -14,6 +15,7 @@ import { EdgeModel } from './models/edge.model';
 export class GraphEditorComponent implements OnInit, OnDestroy {
   @ViewChild('cyContainer', { static: true }) cyContainer!: ElementRef<HTMLDivElement>;
   @ViewChild('rootContainer', { static: true }) rootContainer!: ElementRef<HTMLDivElement>;
+  @ViewChild('graphCanvas', { static: false }) graphCanvasComp?: GraphCanvasComponent;
 
   cy: any;
   nodes: NodeModel[] = [];
@@ -22,6 +24,22 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   selectedEdge: EdgeModel | null = null;
   // right pane width (px)
   rightPaneWidth = 360;
+  // debug helpers to show selection state (visible in UI during debugging)
+  debugLegacyElExists = false;
+  debugLegacyElSelected = false;
+  debugEngineElExists = false;
+  debugEngineElSelected = false;
+  // capture recent debug messages from canvas/editor
+  debugMessages: string[] = [];
+  private _maxDebugMessages = 30;
+
+  onDebugMessage(msg: string) {
+    try {
+      const t = new Date().toLocaleTimeString();
+      this.debugMessages.unshift(`${t} ${msg}`);
+      if (this.debugMessages.length > this._maxDebugMessages) this.debugMessages.length = this._maxDebugMessages;
+    } catch (e) { /* ignore */ }
+  }
   // keep a snapshot of the last selected entity so metadata remains visible after deselect
   lastSelectionSnapshot: { kind: 'node' | 'edge'; data: any } | null = null;
 
@@ -92,6 +110,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   private _boundKeyHandler: any = null;
   // bound outside-click handler to deselect nodes when clicking outside canvas
   private _boundOutsideClickHandler: any = null;
+  private _boundPointerDownHandler: any = null;
   // resizer drag state
   private _isResizerDragging = false;
   private _resizerMoveHandler: any = null;
@@ -122,6 +141,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
 
   private _nodesSub: Subscription | null = null;
   private _edgesSub: Subscription | null = null;
+  private _selectedNodeIdSub: Subscription | null = null;
 
   constructor(private zone: NgZone, private graphStore: GraphStoreService, private engine: GraphEngineService) { }
   ngOnInit(): void {
@@ -273,6 +293,18 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     try {
       this._nodesSub = this.graphStore.nodes$.subscribe(ns => this.nodes = ns || []);
       this._edgesSub = this.graphStore.edges$.subscribe(es => this.edges = es || []);
+      this._selectedNodeIdSub = this.graphStore.selectedNodeId$.subscribe(id => {
+        try {
+          try { this.onDebugMessage(`[GraphStore] selected id ${id}`); } catch (e) { /* ignore */ }
+          if (!id) {
+            // clear selection if store cleared
+            this.clearSelection();
+            return;
+          }
+          // use existing flow to select node by id so visuals and model are consistent
+          try { this.zone.run(() => this.selectNodeById(id)); } catch (e) { this.selectNodeById(id); }
+        } catch (e) { /* ignore */ }
+      });
     } catch (e) { /* ignore */ }
 
     this.cy.on('tap', 'node', (evt: any) => {
@@ -289,6 +321,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
           }
         } catch (e) { /* ignore */ }
       }
+      try { if (console && console.debug) console.debug('[GraphEditor] legacy cy tapped node', id); } catch (e) { /* ignore */ }
       this.selectNodeById(id);
     });
 
@@ -629,17 +662,20 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     this._boundOutsideClickHandler = (ev: MouseEvent) => {
       try {
         const tgt = ev.target as HTMLElement | null;
-        // prefer checking the full component root so clicks on the right-hand panel
-        // (where the edge creation inputs live) do not cancel the draft.
-        const root = this.rootContainer && this.rootContainer.nativeElement ? this.rootContainer.nativeElement : null;
+        // Only consider clicks inside the visible Cytoscape container as 'inside'.
+        // If the click is outside the canvas container, clear selection. This
+        // ensures clicking on the right panel or elsewhere deselects nodes.
         const container = this.cyContainer && this.cyContainer.nativeElement ? this.cyContainer.nativeElement : null;
-        // if click occurred inside the component root or inside the cy container, do nothing
-        if (tgt && ((root && root.contains(tgt)) || (container && container.contains(tgt)))) return;
+        const engineContainer = this.graphCanvasComp && this.graphCanvasComp.cyContainer && this.graphCanvasComp.cyContainer.nativeElement ? this.graphCanvasComp.cyContainer.nativeElement : null;
+        if (tgt && ((container && container.contains(tgt)) || (engineContainer && engineContainer.contains(tgt)))) return;
         // otherwise clear selection
         this.zone.run(() => this.clearSelection());
       } catch (e) { /* ignore */ }
     };
     try { window.addEventListener('click', this._boundOutsideClickHandler); } catch (e) { /* ignore */ }
+    // track last pointerdown target globally so child components can make decisions
+    this._boundPointerDownHandler = (ev: MouseEvent) => { try { (window as any).__lastPointerDownTarget = ev.target; } catch (e) { /* ignore */ } };
+    try { window.addEventListener('mousedown', this._boundPointerDownHandler); } catch (e) { /* ignore */ }
     // make sure container fits the available viewport space (avoid page scrollbar)
     try {
       this._resizeWindowHandler = () => this._adjustRootContainerHeight();
@@ -683,6 +719,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     try { if (this._boundKeyHandler) window.removeEventListener('keydown', this._boundKeyHandler); } catch (e) { /* ignore */ }
     // remove outside-click handler
     try { if (this._boundOutsideClickHandler) window.removeEventListener('click', this._boundOutsideClickHandler); } catch (e) { /* ignore */ }
+    try { if (this._boundPointerDownHandler) window.removeEventListener('mousedown', this._boundPointerDownHandler); } catch (e) { /* ignore */ }
     // remove resizer handlers
     try { if (this._resizerMoveHandler) window.removeEventListener('mousemove', this._resizerMoveHandler); } catch (e) { /* ignore */ }
     try { if (this._resizerUpHandler) window.removeEventListener('mouseup', this._resizerUpHandler); } catch (e) { /* ignore */ }
@@ -698,6 +735,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     // unsubscribe from store
     try { if (this._nodesSub) this._nodesSub.unsubscribe(); } catch (e) { /* ignore */ }
     try { if (this._edgesSub) this._edgesSub.unsubscribe(); } catch (e) { /* ignore */ }
+    try { if (this._selectedNodeIdSub) this._selectedNodeIdSub.unsubscribe(); } catch (e) { /* ignore */ }
   }
 
   
@@ -711,6 +749,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   }
 
   selectNodeById(id: string): void {
+    try { if (console && console.debug) console.debug('[GraphEditor] selectNodeById called for', id); } catch (e) { /* ignore */ }
     // If we already have a source selected and user clicks a different node,
     // start an edge draft between source -> clicked node.
     if (this.connectSource && this.connectSource !== id) {
@@ -742,13 +781,59 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     try { if (this.cy && typeof this.cy.elements === 'function') this.cy.elements().unselect(); } catch (e) { /* ignore */ }
     this.clearSelection();
     const found = this.nodes.find(n => n.id === id) || null;
+    try { if (console && console.debug) console.debug('[GraphEditor] selected node found in model?', !!found); } catch (e) { /* ignore */ }
     this.selectedNode = found;
+    try { this.onDebugMessage(`[GraphEditor] selectedNode set ${this.selectedNode ? this.selectedNode.id : 'null'}`); } catch (e) { /* ignore */ }
+    // If model doesn't contain the node (possible during migration), try to read element data from either cy instance
+    if (!this.selectedNode) {
+      try {
+        const el = (this.cy && this.cy.getElementById) ? this.cy.getElementById(id) : null;
+        const engCy = this.engine && typeof this.engine.getCy === 'function' ? this.engine.getCy() : null;
+        const engEl = engCy && engCy.getElementById ? engCy.getElementById(id) : null;
+        const src = el || engEl || null;
+        if (src && src.data) {
+          const d = src.data() || {};
+          const pos = (src.position && typeof src.position === 'function') ? src.position() : (d.position || null);
+          const stub: NodeModel = { id: id, label: d.label || id, type: d.type || 'condition', position: pos || undefined } as NodeModel;
+          this.selectedNode = stub;
+          try { if (console && console.debug) console.debug('[GraphEditor] selectedNode constructed from element data', this.selectedNode); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+    }
+    try { if (console && console.debug) console.debug('[GraphEditor] selectedNode set to', this.selectedNode); } catch (e) { /* ignore */ }
     const el = this.cy.getElementById(id);
     try {
       if (el) {
         try { if (el.select) el.select(); } catch (e) { /* ignore */ }
         try { el.addClass && el.addClass('selected'); } catch (ee) { /* ignore */ }
       }
+    } catch (e) { /* ignore */ }
+    // also select the node in the migrating engine's Cytoscape instance so visuals match
+    try {
+      const engCy = this.engine && typeof this.engine.getCy === 'function' ? this.engine.getCy() : null;
+      if (engCy) {
+        try {
+          const engEl = engCy.getElementById ? engCy.getElementById(id) : null;
+          if (engEl) {
+            try { if (console && console.debug) console.debug('[GraphEditor] selecting element in engine cy', id, !!engEl); } catch (e) { /* ignore */ }
+            try { if (engEl.select) engEl.select(); } catch (e) { /* ignore */ }
+            try { engEl.addClass && engEl.addClass('selected'); } catch (ee) { /* ignore */ }
+          } else {
+            try { if (console && console.debug) console.debug('[GraphEditor] engine element not found for', id); } catch (e) { /* ignore */ }
+          }
+        } catch (e) { /* ignore */ }
+      }
+      // update debug flags about element presence/selection
+      try {
+        const leg = this.cy && this.cy.getElementById ? this.cy.getElementById(id) : null;
+        this.debugLegacyElExists = !!leg;
+        this.debugLegacyElSelected = !!(leg && leg.hasClass && leg.hasClass('selected'));
+      } catch (e) { this.debugLegacyElExists = false; this.debugLegacyElSelected = false; }
+      try {
+        const eng = engCy && engCy.getElementById ? engCy.getElementById(id) : null;
+        this.debugEngineElExists = !!eng;
+        this.debugEngineElSelected = !!(eng && eng.hasClass && eng.hasClass('selected'));
+      } catch (e) { this.debugEngineElExists = false; this.debugEngineElSelected = false; }
     } catch (e) { /* ignore */ }
     this.connectSource = id;
     // clear any selected edge in the model
@@ -759,7 +844,35 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
 
   // Handler for node clicks emitted from the migrating GraphCanvasComponent
   onCanvasNodeClicked(payload: { id: string } | any): void {
-    try { const id = payload && payload.id ? payload.id : payload; if (id) this.selectNodeById(id); } catch (e) { /* ignore */ }
+    try {
+      const id = payload && payload.id ? payload.id : payload;
+      if (!id) return;
+      // If the migrating canvas emitted a full NodeModel, use it immediately so the right-panel can render
+      if (payload && (payload.label || payload.variable || payload.type)) {
+        try { if (console && console.debug) console.debug('[GraphEditor] onCanvasNodeClicked - payload has node data, applying selection'); } catch (e) { /* ignore */ }
+        try { this.clearSelection(); } catch (e) { /* ignore */ }
+        try {
+          this.zone.run(() => {
+            try { this.selectedNode = payload as NodeModel; } catch (e) { this.selectedNode = { id } as NodeModel; }
+          });
+        } catch (e) {
+          try { this.selectedNode = payload as NodeModel; } catch (ee) { this.selectedNode = { id } as NodeModel; }
+        }
+        try { if (console && console.debug) console.debug('[GraphEditor] selectedNode assigned', this.selectedNode); } catch (e) { /* ignore */ }
+        // apply visual selection in legacy cy if present
+        try { const el = this.cy && this.cy.getElementById ? this.cy.getElementById(id) : null; if (el) { try { if (el.select) el.select(); } catch (e) { } try { el.addClass && el.addClass('selected'); } catch (ee) { } } } catch (e) { /* ignore */ }
+        // also apply selection in engine cy
+        try { const engCy = this.engine && typeof this.engine.getCy === 'function' ? this.engine.getCy() : null; const engEl = engCy && engCy.getElementById ? engCy.getElementById(id) : null; if (engEl) { try { if (engEl.select) engEl.select(); } catch (e) { } try { engEl.addClass && engEl.addClass('selected'); } catch (ee) { } } } catch (e) { /* ignore */ }
+        // set connection source so subsequent interactions behave as if selected
+        try { this.connectSource = id; this.selectedEdge = null; this.lastSelectionSnapshot = { kind: 'node', data: Object.assign({}, this.selectedNode) }; } catch (e) { /* ignore */ }
+        return;
+      }
+      // fallback: payload was just an id, reuse existing selection logic
+      if (id) {
+        try { if (console && console.debug) console.debug('[GraphEditor] onCanvasNodeClicked - fallback to selectNodeById', id); } catch (e) { /* ignore */ }
+        this.selectNodeById(id);
+      }
+    } catch (e) { /* ignore */ }
   }
 
   // Handler for node double-clicks emitted from the migrating GraphCanvasComponent
@@ -806,6 +919,15 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     try { if (this.cy && typeof this.cy.elements === 'function') this.cy.elements().unselect(); } catch (e) { /* ignore */ }
     try { this.cy.nodes().forEach((n: any) => n.removeClass('selected')); } catch (e) { /* ignore */ }
     try { this.cy.edges().forEach((e: any) => e.removeClass('selected')); } catch (e) { /* ignore */ }
+    // also clear selection in the migrating engine's Cytoscape instance
+    try {
+      const engCy = this.engine && typeof this.engine.getCy === 'function' ? this.engine.getCy() : null;
+      if (engCy && typeof engCy.elements === 'function') {
+        try { engCy.elements().unselect(); } catch (e) { /* ignore */ }
+        try { engCy.nodes().forEach((n: any) => n.removeClass && n.removeClass('selected')); } catch (e) { /* ignore */ }
+        try { engCy.edges().forEach((e: any) => e.removeClass && e.removeClass('selected')); } catch (e) { /* ignore */ }
+      }
+    } catch (e) { /* ignore */ }
     this.connectSource = '';
     this.connectTarget = '';
     // remove temporary visual edge if present

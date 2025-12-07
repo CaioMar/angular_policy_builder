@@ -1,4 +1,7 @@
 <div class="right-pane-inner">
+  <div style="position:relative">
+    <div style="position:absolute;right:0;top:0;font-size:11px;color:#666">RP</div>
+  </div>
   <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
     <button (click)="addNode.emit()" style="width:100%;padding:10px 12px">Add Node</button>
     <button (click)="deleteSelected.emit()" [disabled]="!selectedNode" style="width:100%;padding:10px 12px">Delete Node</button>
@@ -50,9 +53,9 @@
     <label>Id: {{selectedNode.id}}</label>
     <div style="margin-top:6px;position:relative">
       <label>Variable</label>
-      <input [ngModel]="pendingVariable" (ngModelChange)="onVariableInputChange($event)"
-             (keyup.enter)="commitVariable()" (blur)="commitVariable(); pendingVariableFocus=false"
-             (focus)="pendingVariableFocus=true" placeholder="variable name"
+            <input [ngModel]="pendingVariable" (ngModelChange)="onVariableInputChange($event)"
+              (keyup.enter)="commitVariable()" (blur)="onVariableBlur()"
+              (focus)="onVariableFocus()" placeholder="variable name"
              style="width:100%;padding:6px;border:1px solid #e6e6e6;border-radius:4px;box-sizing:border-box" />
       <ul *ngIf="showVariableSuggestions() && filteredVariables.length" style="position:absolute;left:0;right:0;top:56px;background:#fff;border:1px solid #ddd;max-height:200px;overflow:auto;z-index:300;margin:4px 0 0 0;padding:0;list-style:none;border-radius:4px">
         <li *ngFor="let v of filteredVariables" (mousedown)="selectSuggestion(v)" style="padding:8px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,0.03)">{{v}}</li>

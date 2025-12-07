@@ -20,6 +20,7 @@ export class GraphEngineService {
         { selector: '.temp-leaf', style: { 'opacity': 0.65 } },
         { selector: 'node.temp-drag-node', style: { 'opacity': 0, 'width': 1, 'height': 1, 'label': '' } },
         { selector: 'node:selected', style: { 'background-color': '#f1faff', 'border-color': '#0073bb', 'border-width': 1 } },
+        { selector: 'node.selected', style: { 'background-color': '#fff3bf', 'border-color': '#d4a700' } },
         { selector: '.new-look-state-node', style: { 'font-weight': 400, 'font-family': '"Amazon Ember", Inter, Roboto, Arial, sans-serif', 'text-shadow': 'none', 'text-halign': 'center', 'text-wrap': 'wrap', 'text-max-width': 110, 'text-margin-y': 0, 'font-size': 15, 'color': '#16191f' } },
         { selector: 'edge', style: { 'curve-style': 'bezier', 'target-arrow-shape': 'triangle', 'label': 'data(label)', 'line-color': '#0073bb', 'target-arrow-color': '#0073bb', 'width': 1 } },
         { selector: '.temp-edge', style: { 'curve-style': 'bezier', 'target-arrow-shape': 'triangle', 'label': 'data(label)', 'line-color': '#0073bb', 'target-arrow-color': '#0073bb', 'line-style': 'dashed', 'opacity': 0.85, 'width': 2 } },

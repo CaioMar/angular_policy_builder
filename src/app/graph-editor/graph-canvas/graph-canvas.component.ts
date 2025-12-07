@@ -14,11 +14,13 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
   @ViewChild('cyContainer', { static: true }) cyContainer!: ElementRef<HTMLDivElement>;
   @Output() nodeClicked = new EventEmitter<NodeModel>();
   @Output() nodeDoubleClicked = new EventEmitter<NodeModel>();
+  @Output() debugMsg = new EventEmitter<string>();
   @Output() canvasReady = new EventEmitter<void>();
   @Output() canvasTapped = new EventEmitter<any>();
 
   @Input() nodes: NodeModel[] = [];
   @Input() edges: EdgeModel[] = [];
+  @Input() selectedNodeId: string | null = null;
   @Input() bgPattern: 'plain' | 'dots' | 'grid' = 'dots';
   @Input() bgColor = '#ffffff';
   @Input() zoomLevel: number = 1.0;
@@ -45,11 +47,17 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
       this.cy = this.engine.init(this.cyContainer.nativeElement, { layout: { name: 'preset' } });
       this.engine.on('tap', 'node', (evt: any) => {
         const node = evt.target; const data = node.data() || {};
+        const payload: NodeModel = { id: data.id, label: data.label, type: data.type, variable: data.variable } as NodeModel;
+        // immediate visual feedback: select the node in the engine cy
+        try { if (node && node.select) node.select(); } catch (e) { /* ignore */ }
+        try { if (console && console.debug) console.debug('[GraphCanvas] tapped node', payload && payload.id); } catch (e) { /* ignore */ }
+        try { this.debugMsg.emit(`[GraphCanvas] tapped node ${payload && payload.id}`); } catch (e) { /* ignore */ }
         // double-click detection using originalEvent.detail (2 for dblclick)
         const orig = evt.originalEvent as MouseEvent | null;
         const isDouble = orig && (orig as any).detail === 2;
-        const payload: NodeModel = { id: data.id, label: data.label, type: data.type } as NodeModel;
         this.zone.run(() => {
+          try { this.debugMsg.emit(`[GraphCanvas] selectNode ${payload && payload.id}`); } catch (e) { /* ignore */ }
+          try { this.graphStore.selectNode(payload && payload.id ? payload.id : null); } catch (e) { /* ignore */ }
           if (isDouble) this.nodeDoubleClicked.emit(payload);
           else this.nodeClicked.emit(payload);
         });
@@ -204,40 +212,80 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
   }
 
   private syncGraph(nodes: NodeModel[], edges: EdgeModel[]): void {
-    const cy = this.engine.getCy();
-    if (!cy) return;
-    this.zone.runOutsideAngular(() => {
+    try {
+      const cy = this.engine.getCy();
+      if (!cy) return;
+
+      // preserve viewport
+      let prevPan: any = null;
+      let prevZoom: number | null = null;
+      try { prevPan = (typeof cy.pan === 'function') ? cy.pan() : null; } catch (e) { prevPan = null; }
+      try { prevZoom = (typeof cy.zoom === 'function') ? cy.zoom() : null; } catch (e) { prevZoom = null; }
+
+      const incomingNodeIds = new Set(nodes.map(n => n.id));
+      const incomingEdgeIds = new Set(edges.map(e => e.id));
+
+      // remove nodes that are no longer present
       try {
-        // preserve current viewport (pan/zoom) to avoid jumping when we re-sync
-        let prevPan: any = null; let prevZoom: any = null;
-        try { prevPan = (typeof cy.pan === 'function') ? cy.pan() : null; } catch (e) { prevPan = null; }
-        try { prevZoom = (typeof cy.zoom === 'function') ? cy.zoom() : null; } catch (e) { prevZoom = null; }
-        // remove all existing elements and re-add current model
-        try { cy.elements().remove(); } catch (e) { /* ignore */ }
-        // add nodes
-        nodes && nodes.forEach(n => {
-          try {
-            cy.add({ group: 'nodes', data: Object.assign({}, n), position: (n as any).position || undefined });
-          } catch (e) { /* ignore */ }
+        cy.nodes().forEach((n: any) => {
+          if (!incomingNodeIds.has(n.id())) n.remove();
         });
-        // add edges
-        edges && edges.forEach(ed => {
-          try {
-            cy.add({ group: 'edges', data: { id: ed.id, source: ed.source, target: ed.target, label: (ed as any).label } });
-          } catch (e) { /* ignore */ }
-        });
-        // re-run preset layout if positions exist
-        try { if (typeof cy.layout === 'function') cy.layout({ name: 'preset' }).run(); } catch (e) { /* ignore */ }
-        try { if (typeof cy.resize === 'function') cy.resize(); } catch (e) { /* ignore */ }
-        // restore previous viewport (pan/zoom) to avoid jumps when nodes are added
-        try {
-          if (prevPan && typeof cy.pan === 'function') { try { cy.pan(prevPan); } catch (e) { /* ignore */ } }
-        } catch (e) { /* ignore */ }
-        try {
-          if (prevZoom != null && typeof cy.zoom === 'function') { try { cy.zoom(prevZoom); } catch (e) { /* ignore */ } }
-          else if (typeof cy.zoom === 'function') { try { cy.zoom(Number(this.zoomLevel)); } catch (e) { /* ignore */ } }
-        } catch (e) { /* ignore */ }
       } catch (e) { /* ignore */ }
-    });
+
+      // add or update nodes
+      nodes.forEach(n => {
+        try {
+          const el = cy.getElementById(n.id);
+          if (el && el.length) {
+            el.data('label', n.label);
+            el.data('variable', n.variable);
+            if (n.position && typeof n.position.x === 'number' && typeof n.position.y === 'number') el.position({ x: n.position.x, y: n.position.y });
+          } else {
+            cy.add({ group: 'nodes', data: { id: n.id, label: n.label, variable: n.variable }, position: { x: (n.position && typeof n.position.x === 'number') ? n.position.x : 0, y: (n.position && typeof n.position.y === 'number') ? n.position.y : 0 } });
+          }
+        } catch (e) { /* ignore */ }
+      });
+
+      // remove edges not present
+      try {
+        cy.edges().forEach((e: any) => {
+          if (!incomingEdgeIds.has(e.id())) e.remove();
+        });
+      } catch (e) { /* ignore */ }
+
+      // add or update edges
+      edges.forEach(ed => {
+        try {
+          const el = cy.getElementById(ed.id);
+          if (el && el.length) {
+            el.data('source', ed.source);
+            el.data('target', ed.target);
+          } else {
+            cy.add({ group: 'edges', data: { id: ed.id, source: ed.source, target: ed.target, label: (ed as any).label } });
+          }
+        } catch (e) { /* ignore */ }
+      });
+
+      // run preset layout (positions preserved) and resize
+      try { if (typeof cy.layout === 'function') cy.layout({ name: 'preset' }).run(); } catch (e) { /* ignore */ }
+      try { if (typeof cy.resize === 'function') cy.resize(); } catch (e) { /* ignore */ }
+
+      // reapply selection from model
+      try {
+        if (this.selectedNodeId) {
+          const sel = cy.getElementById(this.selectedNodeId);
+          if (sel && sel.length) {
+            try { if (sel.select) sel.select(); } catch (e) { /* ignore */ }
+            try { if (sel.addClass) sel.addClass('selected'); } catch (e) { /* ignore */ }
+          }
+        } else {
+          try { cy.elements().unselect(); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+
+      // restore viewport
+      try { if (prevPan && typeof cy.pan === 'function') cy.pan(prevPan); } catch (e) { /* ignore */ }
+      try { if (prevZoom != null && typeof cy.zoom === 'function') cy.zoom(prevZoom); else if (typeof cy.zoom === 'function') cy.zoom(Number(this.zoomLevel)); } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore */ }
   }
 }

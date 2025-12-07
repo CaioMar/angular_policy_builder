@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, OnChanges, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, Input, Output, OnChanges, SimpleChanges, ChangeDetectorRef } from '@angular/core';
 
 @Component({
   selector: 'app-right-panel',
@@ -41,17 +41,28 @@ export class RightPanelComponent {
   @Output() updateSelectedNodeVariable = new EventEmitter<string>();
   // emit when the user commits a label change for the selected node
   @Output() updateSelectedNodeLabel = new EventEmitter<string>();
+  @Output() deselectNode = new EventEmitter<void>();
 
   // internal temp field to hold variable input before commit
   pendingVariable = '';
   pendingVariableFocus = false;
+  private origVariable: string | null = null;
+  private pendingCommitted = false;
+  private pendingCleared = false;
 
   // helpers to forward model-change events from template
   modelChangeUpdatedEdge() { this.updateSelectedEdge.emit(); }
 
+  constructor(private cdr: ChangeDetectorRef) {}
+
   ngOnChanges(changes: SimpleChanges) {
     if (changes['selectedNode']) {
+      try { if (console && console.debug) console.debug('[RightPanel] selectedNode change', this.selectedNode); } catch (e) { /* ignore */ }
       this.pendingVariable = (this.selectedNode && (this.selectedNode.variable || this.selectedNode.label)) || '';
+      this.origVariable = this.pendingVariable || null;
+      this.pendingCommitted = false;
+      this.pendingCleared = false;
+      try { this.cdr.detectChanges(); } catch (e) { /* ignore */ }
     }
   }
 
@@ -60,7 +71,12 @@ export class RightPanelComponent {
     this.onValueInputChange.emit(v);
   }
 
-  commitVariable() { this.updateSelectedNodeVariable.emit((this.pendingVariable || '').trim()); }
+  commitVariable() {
+    const val = (this.pendingVariable || '').trim();
+    this.pendingCommitted = true;
+    this.origVariable = val || this.origVariable;
+    this.updateSelectedNodeVariable.emit(val);
+  }
 
   commitLabel(v: string) { this.updateSelectedNodeLabel.emit((v || '').trim()); }
 
@@ -79,5 +95,25 @@ export class RightPanelComponent {
   showVariableSuggestions(): boolean {
     // show suggestions only when the variable input is focused
     return !!this.pendingVariableFocus;
+  }
+
+  onVariableFocus() {
+    this.pendingVariableFocus = true;
+    if (!this.pendingCleared && this.origVariable) {
+      this.pendingVariable = '';
+      this.pendingCleared = true;
+      this.pendingCommitted = false;
+    }
+  }
+
+  onVariableBlur() {
+    this.pendingVariableFocus = false;
+    if (!this.pendingCommitted) {
+      this.pendingVariable = this.origVariable || '';
+      // notify parent to deselect the node since the user didn't commit a change
+      try { this.deselectNode.emit(); } catch (e) { /* ignore */ }
+    }
+    this.pendingCommitted = false;
+    this.pendingCleared = false;
   }
 }

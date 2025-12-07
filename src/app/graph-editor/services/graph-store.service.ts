@@ -7,9 +7,11 @@ import { EdgeModel } from '../models/edge.model';
 export class GraphStoreService {
   private _nodes$ = new BehaviorSubject<NodeModel[]>([]);
   private _edges$ = new BehaviorSubject<EdgeModel[]>([]);
+  private _selectedNodeId$ = new BehaviorSubject<string | null>(null);
 
   readonly nodes$: Observable<NodeModel[]> = this._nodes$.asObservable();
   readonly edges$: Observable<EdgeModel[]> = this._edges$.asObservable();
+  readonly selectedNodeId$: Observable<string | null> = this._selectedNodeId$.asObservable();
 
   get snapshot() {
     return { nodes: this._nodes$.value.slice(), edges: this._edges$.value.slice() };
@@ -32,4 +34,6 @@ export class GraphStoreService {
     this._edges$.next(this._edges$.value.map(e => e.id === id ? { ...e, ...patch } : e));
   }
   removeEdge(id: string) { this._edges$.next(this._edges$.value.filter(e => e.id !== id)); }
+
+  selectNode(id: string | null) { this._selectedNodeId$.next(id); }
 }
