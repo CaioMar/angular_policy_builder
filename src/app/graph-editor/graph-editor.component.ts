@@ -1005,7 +1005,15 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
         // optionally surface an error to the user; for now ignore invalid updates
         return;
       }
-      try { this.graphStore.updateNode(this.selectedNode.id, { variable: found }); } catch (e) { /* ignore */ }
+      try {
+        // update both variable and label to the selected variable name so node label follows variable by default
+        this.graphStore.updateNode(this.selectedNode.id, { variable: found, label: found });
+        // update local model snapshot so right-panel reflects change immediately
+        try { this.selectedNode.variable = found; this.selectedNode.label = found; } catch (e) { /* ignore */ }
+        // update cy visuals if present
+        try { const el = this.cy.getElementById(this.selectedNode.id); if (el) el.data('label', found); } catch (e) { /* ignore */ }
+        try { const engCy = this.engine && typeof this.engine.getCy === 'function' ? this.engine.getCy() : null; if (engCy) { const engEl = engCy.getElementById(this.selectedNode.id); if (engEl) engEl.data && engEl.data('label', found); } } catch (e) { /* ignore */ }
+      } catch (e) { /* ignore */ }
     } catch (e) { /* ignore */ }
   }
 
