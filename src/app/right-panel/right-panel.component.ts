@@ -111,7 +111,16 @@ export class RightPanelComponent {
     if (!this.pendingCommitted) {
       this.pendingVariable = this.origVariable || '';
       // notify parent to deselect the node since the user didn't commit a change
-      try { this.deselectNode.emit(); } catch (e) { /* ignore */ }
+      // but only if focus moved outside the right panel. This prevents a
+      // click into another control inside the right panel (for example the
+      // variable input or suggestions) from immediately deselecting the node.
+      try {
+        const active = document.activeElement as HTMLElement | null;
+        const rightPanelEl = (document.querySelector('app-right-panel') as HTMLElement) || (document.querySelector('.right-pane') as HTMLElement) || (document.querySelector('.right-pane-inner') as HTMLElement) || null;
+        if (!(active && rightPanelEl && rightPanelEl.contains(active))) {
+          try { this.deselectNode.emit(); } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
     }
     this.pendingCommitted = false;
     this.pendingCleared = false;

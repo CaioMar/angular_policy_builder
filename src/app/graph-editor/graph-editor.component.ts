@@ -662,12 +662,24 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     this._boundOutsideClickHandler = (ev: MouseEvent) => {
       try {
         const tgt = ev.target as HTMLElement | null;
-        // Only consider clicks inside the visible Cytoscape container as 'inside'.
-        // If the click is outside the canvas container, clear selection. This
-        // ensures clicking on the right panel or elsewhere deselects nodes.
+        // Only consider clicks inside the visible Cytoscape container or the right pane
+        // as 'inside'. If the click is outside these, clear selection. This avoids
+        // deselecting nodes when the user interacts with inputs in the right panel.
         const container = this.cyContainer && this.cyContainer.nativeElement ? this.cyContainer.nativeElement : null;
         const engineContainer = this.graphCanvasComp && this.graphCanvasComp.cyContainer && this.graphCanvasComp.cyContainer.nativeElement ? this.graphCanvasComp.cyContainer.nativeElement : null;
-        if (tgt && ((container && container.contains(tgt)) || (engineContainer && engineContainer.contains(tgt)))) return;
+        const rightPane = (document.querySelector('.right-pane') as HTMLElement) || (document.querySelector('.right-panel') as HTMLElement) || (document.querySelector('.right-pane-inner') as HTMLElement) || (document.querySelector('app-right-panel') as HTMLElement) || null;
+        // If the click target is inside the cy container or the right pane, treat as inside.
+        if (tgt && ((container && container.contains(tgt)) || (engineContainer && engineContainer.contains(tgt)) || (rightPane && rightPane.contains(tgt)))) return;
+        // Also handle the case where the pointerdown began inside the right panel but the
+        // eventual click event's target is different (e.g. due to suggestion overlay or
+        // pointer capture). We track the last pointerdown target via a global set by
+        // `_boundPointerDownHandler` and honor that as an 'inside' hit as well.
+        try {
+          const lastDown = (window as any).__lastPointerDownTarget as HTMLElement | null;
+          if (lastDown && rightPane && rightPane.contains(lastDown)) return;
+          if (lastDown && container && container.contains(lastDown)) return;
+          if (lastDown && engineContainer && engineContainer.contains(lastDown)) return;
+        } catch (e) { /* ignore */ }
         // otherwise clear selection
         this.zone.run(() => this.clearSelection());
       } catch (e) { /* ignore */ }
