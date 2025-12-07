@@ -1,16 +1,10 @@
 <div #rootContainer class="container" style="display:flex;align-items:stretch;height:auto;gap:0;box-sizing:border-box;">
-  <!-- Debug status box (temporary) -->
-  <div style="position:fixed;right:12px;bottom:12px;z-index:9999;background:rgba(0,0,0,0.72);color:#fff;padding:8px;border-radius:6px;font-size:12px;max-width:320px">
-    <div style="font-weight:600;margin-bottom:6px">Debug</div>
-    <div>selectedNode: <strong>{{selectedNode?.id || '—'}}</strong></div>
-    <div style="margin-top:6px">legacy el: <strong [style.color]="debugLegacyElExists ? '#bde' : '#666'">{{debugLegacyElExists ? 'exists' : 'no'}}</strong> / <strong [style.color]="debugLegacyElSelected ? '#ffd54f' : '#666'">{{debugLegacyElSelected ? 'selected' : 'not'}}</strong></div>
-    <div>engine el: <strong [style.color]="debugEngineElExists ? '#bde' : '#666'">{{debugEngineElExists ? 'exists' : 'no'}}</strong> / <strong [style.color]="debugEngineElSelected ? '#ffd54f' : '#666'">{{debugEngineElSelected ? 'selected' : 'not'}}</strong></div>
-  </div>
+  <!-- debug UI removed -->
   <div class="left-pane" style="flex:1;min-width:0;padding-right:12px">
     <div class="controls">
       <div id="cy" #cyContainer (drop)="onDrop($event)" (dragover)="onDragOver($event)" style="display:none" aria-hidden="true"></div>
       <!-- New migrating canvas overlay: captures node taps/double-taps and emits events to the editor -->
-      <app-graph-canvas #graphCanvas style="position:absolute;left:0;top:0;right:0;bottom:0;z-index:180" [bgPattern]="bgPattern" [bgColor]="bgColor" [zoomLevel]="zoomLevel" [zoomSensitivity]="zoomSensitivity" [selectedNodeId]="selectedNode?.id" (nodeClicked)="onCanvasNodeClicked($event)" (nodeDoubleClicked)="onCanvasNodeDoubleClicked($event)" (canvasTapped)="onCanvasTapped($event)" (debugMsg)="onDebugMessage($event)"></app-graph-canvas>
+      <app-graph-canvas #graphCanvas style="position:absolute;left:0;top:0;right:0;bottom:0;z-index:180" [bgPattern]="bgPattern" [bgColor]="bgColor" [zoomLevel]="zoomLevel" [zoomSensitivity]="zoomSensitivity" [selectedNodeId]="selectedNode?.id" (nodeClicked)="onCanvasNodeClicked($event)" (nodeDoubleClicked)="onCanvasNodeDoubleClicked($event)" (canvasTapped)="onCanvasTapped($event)"></app-graph-canvas>
       <!-- SVG overlay: fallback visible line drawn on top during drag (pointer-events:none) -->
       <svg class="edge-overlay" [style.display]="isEdgeDragging ? 'block' : 'none'">
         <defs>
@@ -55,9 +49,7 @@
       [metadataHeight]="metadataHeight"
       (startMetaResizerDrag)="startMetaResizerDrag($event)">
     </app-metadata-panel>
-    <div style="margin-top:8px;max-height:160px;overflow:auto">
-      <div *ngFor="let m of debugMessages" style="font-size:11px;color:#ddd;border-bottom:1px dashed rgba(255,255,255,0.04);padding:4px 0">{{m}}</div>
-    </div>
+    <!-- debug messages removed -->
   </div>
 
   <!-- resizer between panes -->

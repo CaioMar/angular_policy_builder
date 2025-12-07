@@ -24,22 +24,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
   selectedEdge: EdgeModel | null = null;
   // right pane width (px)
   rightPaneWidth = 360;
-  // debug helpers to show selection state (visible in UI during debugging)
-  debugLegacyElExists = false;
-  debugLegacyElSelected = false;
-  debugEngineElExists = false;
-  debugEngineElSelected = false;
-  // capture recent debug messages from canvas/editor
-  debugMessages: string[] = [];
-  private _maxDebugMessages = 30;
-
-  onDebugMessage(msg: string) {
-    try {
-      const t = new Date().toLocaleTimeString();
-      this.debugMessages.unshift(`${t} ${msg}`);
-      if (this.debugMessages.length > this._maxDebugMessages) this.debugMessages.length = this._maxDebugMessages;
-    } catch (e) { /* ignore */ }
-  }
+  
   // keep a snapshot of the last selected entity so metadata remains visible after deselect
   lastSelectionSnapshot: { kind: 'node' | 'edge'; data: any } | null = null;
 
@@ -295,7 +280,6 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
       this._edgesSub = this.graphStore.edges$.subscribe(es => this.edges = es || []);
       this._selectedNodeIdSub = this.graphStore.selectedNodeId$.subscribe(id => {
         try {
-          try { this.onDebugMessage(`[GraphStore] selected id ${id}`); } catch (e) { /* ignore */ }
           if (!id) {
             // clear selection if store cleared
             this.clearSelection();
@@ -795,7 +779,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
     const found = this.nodes.find(n => n.id === id) || null;
     try { if (console && console.debug) console.debug('[GraphEditor] selected node found in model?', !!found); } catch (e) { /* ignore */ }
     this.selectedNode = found;
-    try { this.onDebugMessage(`[GraphEditor] selectedNode set ${this.selectedNode ? this.selectedNode.id : 'null'}`); } catch (e) { /* ignore */ }
+    // debug logging removed
     // If model doesn't contain the node (possible during migration), try to read element data from either cy instance
     if (!this.selectedNode) {
       try {
@@ -835,17 +819,7 @@ export class GraphEditorComponent implements OnInit, OnDestroy {
           }
         } catch (e) { /* ignore */ }
       }
-      // update debug flags about element presence/selection
-      try {
-        const leg = this.cy && this.cy.getElementById ? this.cy.getElementById(id) : null;
-        this.debugLegacyElExists = !!leg;
-        this.debugLegacyElSelected = !!(leg && leg.hasClass && leg.hasClass('selected'));
-      } catch (e) { this.debugLegacyElExists = false; this.debugLegacyElSelected = false; }
-      try {
-        const eng = engCy && engCy.getElementById ? engCy.getElementById(id) : null;
-        this.debugEngineElExists = !!eng;
-        this.debugEngineElSelected = !!(eng && eng.hasClass && eng.hasClass('selected'));
-      } catch (e) { this.debugEngineElExists = false; this.debugEngineElSelected = false; }
+      // debug flags removed
     } catch (e) { /* ignore */ }
     this.connectSource = id;
     // clear any selected edge in the model

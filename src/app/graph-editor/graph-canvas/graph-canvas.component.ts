@@ -14,7 +14,6 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
   @ViewChild('cyContainer', { static: true }) cyContainer!: ElementRef<HTMLDivElement>;
   @Output() nodeClicked = new EventEmitter<NodeModel>();
   @Output() nodeDoubleClicked = new EventEmitter<NodeModel>();
-  @Output() debugMsg = new EventEmitter<string>();
   @Output() canvasReady = new EventEmitter<void>();
   @Output() canvasTapped = new EventEmitter<any>();
 
@@ -51,12 +50,11 @@ export class GraphCanvasComponent implements OnInit, OnDestroy {
         // immediate visual feedback: select the node in the engine cy
         try { if (node && node.select) node.select(); } catch (e) { /* ignore */ }
         try { if (console && console.debug) console.debug('[GraphCanvas] tapped node', payload && payload.id); } catch (e) { /* ignore */ }
-        try { this.debugMsg.emit(`[GraphCanvas] tapped node ${payload && payload.id}`); } catch (e) { /* ignore */ }
         // double-click detection using originalEvent.detail (2 for dblclick)
         const orig = evt.originalEvent as MouseEvent | null;
         const isDouble = orig && (orig as any).detail === 2;
         this.zone.run(() => {
-          try { this.debugMsg.emit(`[GraphCanvas] selectNode ${payload && payload.id}`); } catch (e) { /* ignore */ }
+          // debug event removed
           try { this.graphStore.selectNode(payload && payload.id ? payload.id : null); } catch (e) { /* ignore */ }
           if (isDouble) this.nodeDoubleClicked.emit(payload);
           else this.nodeClicked.emit(payload);
