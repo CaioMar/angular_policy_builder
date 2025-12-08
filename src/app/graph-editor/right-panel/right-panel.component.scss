@@ -1,0 +1,3 @@
+/* Styles for right-panel (kept minimal; component adapts existing inline styles) */
+.palette { display:flex;gap:8px;flex-wrap:wrap }
+.var { background:#f3f4f6;padding:6px 8px;border-radius:6px;border:1px solid #e5e7eb;cursor:grab }
